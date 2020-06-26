@@ -56,24 +56,20 @@ let find_nearest td mean =
   | None -> None
   end
 
-let insert td c =
-  begin match Float.Map.add td.centroids ~key:c.mean ~data:c with
-  | `Ok centroids ->
-    td.centroids <- centroids;
-    td.n <- td.n + c.n
-  | `Duplicate ->
-    failwith "Insert ignored!"
-  end
-
 let new_centroid td ~mean ~n ~cumn =
   let data = { mean; cumn; n; mean_cumn = n / 2. } in
-  insert td data
+  begin match Float.Map.add td.centroids ~key:data.mean ~data with
+  | `Duplicate -> failwith "Insert ignored!"
+  | `Ok centroids ->
+    td.centroids <- centroids;
+    td.n <- td.n + data.n
+  end
 
 let add_weight td nearest ~mean ~n =
   if nearest.mean <> mean
   then nearest.mean <- nearest.mean + (n * (mean - nearest.mean) / (nearest.n + n));
   nearest.cumn <- nearest.cumn + n;
-  nearest.mean_cumn <- nearest.mean_cumn + nearest.n / 2.;
+  nearest.mean_cumn <- nearest.mean_cumn + n / 2.;
   nearest.n <- nearest.n + n;
   td.n <- td.n + n
 
@@ -83,9 +79,8 @@ let cumulate td exact =
   then () else begin
     let cumn = Float.Map.fold td.centroids ~init:0. ~f:(fun ~key:_ ~data cumn ->
         data.mean_cumn <- cumn + data.n / 2.;
-        let acc = cumn + data.n in
-        data.cumn <- acc;
-        acc
+        data.cumn <- cumn + data.n;
+        data.cumn
       )
     in
     td.n <- cumn;
