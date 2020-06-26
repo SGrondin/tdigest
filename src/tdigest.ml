@@ -1,4 +1,5 @@
 open! Core_kernel
+open Float
 
 type delta =
 | Compress of float
@@ -6,7 +7,7 @@ type delta =
 
 type settings = {
   delta: delta;
-  k: int;
+  k: float;
   cx: float;
 }
 
@@ -14,38 +15,42 @@ type centroid = {
   mutable mean: float;
   mutable cumn: float;
   mutable mean_cumn: float;
-  mutable n: int;
+  mutable n: float;
 }
 
 type t = {
   mutable settings: settings;
   mutable centroids: centroid Float.Map.t;
-  mutable n: int;
-  mutable last_cumulate: int;
+  mutable n: float;
+  mutable last_cumulate: float;
 }
 
-let is_discrete = function
-| { settings = { delta = Discrete; _ }; _ } -> true
-| _ -> false
+type bounds =
+| Neither
+| Both of (centroid * centroid)
+| Equal of centroid
+| Lower of centroid
+| Upper of centroid
+
 
 let create ?(delta = Compress 0.01) ?(k = 25) ?(cx = 1.1) () =
   (* TODO: validate inputs *)
   {
-    settings = { delta; k; cx };
+    settings = { delta; k = Int.to_float k; cx };
     centroids = Float.Map.empty;
-    n = 0;
-    last_cumulate = 0;
+    n = 0.;
+    last_cumulate = 0.;
   }
 
 let size td = Float.Map.length td.centroids
 
 let find_nearest td mean =
   begin match Float.Map.closest_key td.centroids `Less_or_equal_to mean with
-  | Some (k, v) when Float.(mean = k) -> Some v
+  | Some (k, v) when mean = k -> Some v
   | Some (k1, v1) ->
     begin match Float.Map.closest_key td.centroids `Greater_than mean with
     | None -> None
-    | Some (k2, _v2) when Float.((mean - k1) < (k2 - mean)) -> Some v1
+    | Some (k2, _v2) when (mean - k1) < (k2 - mean) -> Some v1
     | Some (_k2, v2) -> Some v2
     end
   | None -> None
@@ -61,27 +66,25 @@ let insert td c =
   end
 
 let new_centroid td ~mean ~n ~cumn =
-  let data = { mean; cumn; n; mean_cumn = n // 2 } in
+  let data = { mean; cumn; n; mean_cumn = n / 2. } in
   insert td data
 
 let add_weight td nearest ~mean ~n =
-  let open Float in
   if nearest.mean <> mean
-  then nearest.mean <- nearest.mean + ((of_int n) * (mean - nearest.mean) / Int.(nearest.n + n |> to_float));
-  nearest.cumn <- nearest.cumn + (of_int n);
-  nearest.mean_cumn <- nearest.mean_cumn + (nearest.n // 2);
-  nearest.n <- Int.(nearest.n + n);
-  td.n <- Int.(td.n + n)
+  then nearest.mean <- nearest.mean + (n * (mean - nearest.mean) / (nearest.n + n));
+  nearest.cumn <- nearest.cumn + n;
+  nearest.mean_cumn <- nearest.mean_cumn + nearest.n / 2.;
+  nearest.n <- nearest.n + n;
+  td.n <- td.n + n
 
 let cumulate td exact =
-  let open Float in
-  if Int.(td.n = td.last_cumulate) ||
-     (not exact && td.settings.cx > 0.0 && td.settings.cx > td.n // td.last_cumulate)
+  if (td.n = td.last_cumulate) ||
+     (not exact && td.settings.cx > 0.0 && td.settings.cx > td.n / td.last_cumulate)
   then () else begin
-    let cumn = Float.Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data cumn ->
-        data.mean_cumn <- (of_int cumn) + data.n // 2;
-        let acc = Int.(cumn + data.n) in
-        data.cumn <- of_int acc;
+    let cumn = Float.Map.fold td.centroids ~init:0. ~f:(fun ~key:_ ~data cumn ->
+        data.mean_cumn <- cumn + data.n / 2.;
+        let acc = cumn + data.n in
+        data.cumn <- acc;
         acc
       )
     in
@@ -91,21 +94,21 @@ let cumulate td exact =
 
 let internal_digest td ~n ~mean =
   let nearest_is_fn fn nearest =
-    Option.value_map ~default:false (fn td.centroids) ~f:Float.(fun (k, _v) -> k = nearest.mean)
+    Option.value_map ~default:false (fn td.centroids) ~f:(fun (k, _v) -> k = nearest.mean)
   in
   begin match (find_nearest td mean), td.settings.delta with
-  | (Some nearest), _ when Float.(nearest.mean = mean) ->
+  | (Some nearest), _ when nearest.mean = mean ->
     add_weight td nearest ~mean ~n
   | (Some nearest), _ when nearest_is_fn Float.Map.min_elt nearest ->
     new_centroid td ~mean ~n ~cumn:0.0
   | (Some nearest), _ when nearest_is_fn Float.Map.max_elt nearest ->
-    new_centroid td ~mean ~n ~cumn:(Int.to_float td.n)
+    new_centroid td ~mean ~n ~cumn:td.n
   | (Some nearest), Discrete ->
     new_centroid td ~mean ~n ~cumn:nearest.cumn
   | (Some nearest), Compress delta ->
-    let p = Float.(nearest.mean_cumn / (of_int td.n)) in
-    let max_n = Float.(round_down (4.0 * (of_int td.n) * delta * p * (1.0 - p))) in
-    if Float.((max_n - (of_int nearest.n)) >= (of_int n))
+    let p = nearest.mean_cumn / td.n in
+    let max_n = round_down (4.0 * td.n * delta * p * (1.0 - p)) in
+    if (max_n - nearest.n) >= n
     then add_weight td nearest ~mean ~n
     else new_centroid td ~mean ~n ~cumn:nearest.cumn
   | None, _ ->
@@ -113,16 +116,24 @@ let internal_digest td ~n ~mean =
   end;
   cumulate td false
 
+let to_array td =
+  begin match Float.Map.min_elt td.centroids with
+  | None -> [||]
+  | Some (_k, v) ->
+    let arr = Array.create ~len:(size td) v in
+    let _i = Float.Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data i ->
+        Array.set arr i data;
+        succ i
+      )
+    in
+    arr
+  end
+
 let shuffled_array td =
-  let arr = Array.create ~len:(size td) (Float.Map.min_elt_exn td.centroids |> snd) in
-  let _i = Float.Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data i ->
-      Array.set arr i data;
-      i + 1
-    )
-  in
+  let arr = to_array td in
   let _i = Array.fold_right arr ~init:(Array.length arr) ~f:(fun _x i ->
-      let random = Float.((Random.float 1.0) * (of_int i) |> to_int) in
-      let current = i - 1 in
+      let random = (Random.float 1.0) * (of_int i) |> to_int in
+      let current = pred i in
       Array.swap arr random current;
       current
     )
@@ -132,17 +143,17 @@ let shuffled_array td =
 let compress td =
   let arr = shuffled_array td in
   td.centroids <- Float.Map.empty;
-  td.n <- 0;
-  td.last_cumulate <- 0;
+  td.n <- 0.;
+  td.last_cumulate <- 0.;
   Array.iter arr ~f:(fun { mean; n; _ } ->
     internal_digest td ~n ~mean
   );
   cumulate td true
 
 let digest td ?(n = 1) ~mean =
-  internal_digest td ~n ~mean;
+  internal_digest td ~n:(Int.to_float n) ~mean;
   begin match td.settings with
-  | { delta = Compress delta; k; _ } when k > 0 && Float.((size td |> of_int) > (of_int k) / delta) ->
+  | { delta = Compress delta; k; _ } when is_positive k && (size td |> of_int) > k / delta ->
     compress td
   | _ -> ()
   end
@@ -154,42 +165,51 @@ let add_list td ?(n = 1) xs = List.iter xs ~f:(fun mean -> digest td ~n ~mean)
 let bounds td needle lens =
   let search kind =
     Float.Map.binary_search td.centroids kind needle
-      ~compare:(fun ~key:_ ~data x -> Float.compare (lens data) x)
+      ~compare:(fun ~key:_ ~data x -> compare (lens data) x)
   in
   begin match search `Last_less_than_or_equal_to with
-  | Some (_k, v) when Float.((lens v) = needle) ->
-    (Some v), (Some v)
+  | Some (_k, v) when (lens v) = needle ->
+    Equal v
   | Some (_k1, v1) ->
     begin match search `First_strictly_greater_than with
     | Some (_k2, v2) ->
-      (Some v1), (Some v2)
+      Both (v1, v2)
     | None ->
-      (Some v1, None)
+      Lower v1
     end
-  | None -> None, (Float.Map.min_elt td.centroids |> Option.map ~f:snd)
+  | None ->
+    begin match Float.Map.min_elt td.centroids with
+    | Some (_k, v) -> Upper v
+    | None -> Neither
+    end
   end
 
 let percentile td p =
   if Float.Map.is_empty td.centroids then None else begin
     cumulate td true;
-    let h = Float.((of_int td.n) * p) in
+    let h = Float.(td.n * p) in
     begin match (bounds td h (fun { mean_cumn; _ } -> mean_cumn)), td.settings.delta with
-    | ((Some x), None), _
-    | (None, (Some x)), _ -> Some x.mean
-    | ((Some { mean = lower; _ }), (Some { mean = upper; _ })), _ when Float.(lower = upper) -> Some lower
-    | ((Some lower), (Some upper)), Compress _ ->
-      Some Float.(lower.mean + (h - lower.mean_cumn) * (upper.mean - lower.mean) / (upper.mean_cumn - lower.mean_cumn))
-    | ((Some lower), (Some _)), Discrete when Float.(h <= lower.cumn) -> Some lower.mean
-    | ((Some _), (Some upper)), Discrete -> Some upper.mean
-    | (None, None), _ -> None
+    | (Lower x), _
+    | (Upper x), _
+    | (Equal x), _ -> Some x.mean
+    | (Both (lower, upper)), Compress _ ->
+      Some (lower.mean + (h - lower.mean_cumn) * (upper.mean - lower.mean) / (upper.mean_cumn - lower.mean_cumn))
+    | (Both (lower, _upper)), Discrete when h <= lower.cumn -> Some lower.mean
+    | (Both (_lower, upper)), Discrete -> Some upper.mean
+    | Neither, _ -> None
     end
   end
 
 let summary td =
+  let mode = begin match td.settings.delta with
+  | Compress _ -> "approx"
+  | Discrete -> "exact"
+  end
+  in
   let print_pct x = percentile td x |> Option.value_map ~f:Float.to_string ~default:"---" in
   String.concat ~sep:"\n" [
-    sprintf "%s %d samples using %d centroids"
-      (if is_discrete td then "approx" else "exact") td.n (size td);
+    sprintf "%s %f samples using %d centroids"
+      mode td.n (size td);
     sprintf "min = %s" (print_pct 0.0);
     sprintf "Q1  = %s" (print_pct 0.25);
     sprintf "Q2  = %s" (print_pct 0.5);
@@ -198,7 +218,6 @@ let summary td =
   ]
 
 let p_rank td p =
-  let open Float in
   begin match Float.Map.min_elt td.centroids with
   | None -> None
   | Some (_k, v) when p < v.mean -> Some 0.0
@@ -209,14 +228,20 @@ let p_rank td p =
     | Some _ ->
       cumulate td true;
       begin match (bounds td p (fun { mean; _ } -> mean)), td.settings.delta with
-      | ((Some lower), _), Discrete -> Some (lower.cumn / (of_int td.n))
-      | (None, _), Discrete -> None
-      | ((Some { mean_cumn = lower; _ }), (Some { mean_cumn = upper; _ })), Compress _ when Float.(lower = upper) ->
-        Some (lower / (of_int td.n))
-      | ((Some lower), (Some upper)), Compress _ ->
+      | (Both (lower, _)), Discrete
+      | (Lower lower), Discrete
+      | (Equal lower), Discrete -> Some (lower.cumn / td.n)
+
+      | Neither, Discrete
+      | (Upper _), Discrete -> None
+
+      | (Equal x), Compress _ -> Some (x.mean_cumn / td.n)
+
+      | (Both (lower, upper)), Compress _ ->
         let num = lower.mean_cumn + ((p - lower.mean) * (upper.mean_cumn - lower.mean_cumn) / (upper.mean - lower.mean)) in
-        Some (num / (of_int td.n))
-      | (_, _), Compress _ -> None
+        Some (num / td.n)
+
+      | _, Compress _ -> None
       end
     end
   end
@@ -225,7 +250,7 @@ module Testing = struct
   let centroid_to_yojson data basic =
     let base = [
       "mean", `Float data.mean;
-      "n", `Int data.n;
+      "n", `Float data.n;
     ]
     in
     `Assoc (
@@ -236,7 +261,7 @@ module Testing = struct
     let ll = Float.Map.fold_right td.centroids ~init:[] ~f:(fun ~key:_ ~data acc ->
         let base = [
           "mean", `Float data.mean;
-          "n", `Int data.n;
+          "n", `Float data.n;
         ]
         in
         `Assoc (

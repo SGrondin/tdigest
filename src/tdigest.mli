@@ -25,7 +25,7 @@ module Testing : sig
     [> `Assoc of
         (string *
             [> `List of
-                [> `Assoc of (string * [> `Float of float | `Int of int ]) list ]
+                [> `Assoc of (string * [> `Float of float ]) list ]
                   list ])
           list ]
 
@@ -37,9 +37,9 @@ module Testing : sig
 
   val min:
     t ->
-    [> `Assoc of (string * [> `Float of float | `Int of int ]) list | `Null ]
+    [> `Assoc of (string * [> `Float of float ]) list | `Null ]
 
   val max:
     t ->
-    [> `Assoc of (string * [> `Float of float | `Int of int ]) list | `Null ]
+    [> `Assoc of (string * [> `Float of float ]) list | `Null ]
 end

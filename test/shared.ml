@@ -2,12 +2,12 @@ open! Core_kernel
 
 type basic = {
   mean: float;
-  n: int;
+  n: float;
 } [@@deriving fields]
 
-let b mean n = { mean; n }
+let b mean n = { mean; n = Int.to_float n }
 
-let basic_to_yojson { mean; n } : Yojson.Safe.t = `Assoc ["mean", `Float mean; "n", `Int n]
+let basic_to_yojson { mean; n } : Yojson.Safe.t = `Assoc ["mean", `Float mean; "n", `Float n]
 
 let floats_to_yojson ll = `Assoc ["value", `List (List.map ll ~f:(fun x -> `Float x))]
 
