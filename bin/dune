@@ -1,0 +1,16 @@
+(executable
+  (name app)
+  (libraries
+    tdigest
+
+    core_kernel
+    yojson
+  )
+
+  (modes exe)
+  (ocamlopt_flags -O3 -unbox-closures)
+)
+
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

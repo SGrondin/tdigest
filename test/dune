@@ -1,0 +1,12 @@
+(tests
+  (names test_discrete test_digest test_tdigest)
+  (libraries
+    tdigest
+    alcotest
+    yojson
+  )
+  (preprocess (pps
+    ppx_jane
+  ))
+  (ocamlopt_flags -Oclassic)
+)

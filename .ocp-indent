@@ -1,0 +1,4 @@
+strict_else=never
+strict_with=always
+align_ops=false
+align_params=never

@@ -1,0 +1,13 @@
+(library
+  (name tdigest)
+  (libraries
+    core_kernel
+  )
+  (preprocess (pps
+    ppx_jane
+  ))
+  (ocamlopt_flags -O3 -unbox-closures))
+
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

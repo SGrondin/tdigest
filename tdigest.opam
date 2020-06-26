@@ -1,0 +1,26 @@
+opam-version: "2.0"
+maintainer: "Simon Grondin"
+authors: [
+  "Simon Grondin"
+  "Will Welch"
+]
+synopsis: "T-Digest"
+description: """
+T-Digest
+"""
+license: "MIT"
+tags: []
+homepage: "https://github.com/SGrondin/tdigest"
+doc: "https://github.com/SGrondin/tdigest"
+bug-reports: "https://github.com/SGrondin/tdigest/issues"
+depends: [
+  "ocaml" {>= "4.08.1"}
+  "dune" {build & >= "1.9.0"}
+
+  "core_kernel" { >= "v0.14.0" & < "v0.15.0" }
+
+  "utop"
+
+  "alcotest" { with-test }
+  "yojson" { with-test }
+]
