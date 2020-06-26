@@ -17,13 +17,15 @@ let float_opts_to_yojson ll = `Assoc [
       | None -> `Null
       ))]
 
-let check_fn td queries results fn =
-  let left = List.map queries ~f:(fn td) |> float_opts_to_yojson in
+let check_fn td queries results ~fn =
+  let _td, ranks = fn td queries in
+  let left = float_opts_to_yojson ranks in
   let right = floats_to_yojson results in
   Json_diff.assert_equal left right
 
-let check_p_ranks td queries results = check_fn td queries results Tdigest.p_rank
-let check_percentiles td queries results = check_fn td queries results Tdigest.percentile
+let check_p_ranks = check_fn ~fn:Tdigest.p_ranks
+
+let check_percentiles = check_fn ~fn:Tdigest.percentiles
 
 let check td vs =
   let json : Yojson.Safe.t = Tdigest.Testing.to_yojson td true in

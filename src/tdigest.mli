@@ -8,15 +8,17 @@ type t
 
 val create: ?delta:delta -> ?k:int -> ?cx:float -> unit -> t
 
-val add: t -> ?n:int -> float -> unit
+val add: ?n:int -> mean:float -> t -> t
 
-val add_list: t -> ?n:int -> float list -> unit
+val add_list: ?n:int -> float list -> t -> t
 
-val p_rank: t -> float -> float option
+val p_rank: t -> float -> t * float option
+val p_ranks: t -> float list -> t * float option list
 
-val percentile: t -> float -> float option
+val percentile: t -> float -> t * float option
+val percentiles: t -> float list -> t * float option list
 
-val summary: t -> string
+val size: t -> int
 
 module Testing : sig
   val to_yojson:
@@ -29,11 +31,9 @@ module Testing : sig
                   list ])
           list ]
 
-  val compress_with_delta: t -> delta -> unit
+  val compress_with_delta: t -> delta -> t
 
-  val compress: t -> unit
-
-  val size: t -> int
+  val compress: t -> t
 
   val min:
     t ->

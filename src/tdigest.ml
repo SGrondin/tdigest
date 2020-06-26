@@ -12,17 +12,17 @@ type settings = {
 }
 
 type centroid = {
-  mutable mean: float;
-  mutable cumn: float;
-  mutable mean_cumn: float;
-  mutable n: float;
+  mean: float;
+  cumn: float;
+  mean_cumn: float;
+  n: float;
 }
 
 type t = {
-  mutable settings: settings;
-  mutable centroids: centroid Float.Map.t;
-  mutable n: float;
-  mutable last_cumulate: float;
+  settings: settings;
+  centroids: centroid Float.Map.t;
+  n: float;
+  last_cumulate: float;
 }
 
 type bounds =
@@ -61,37 +61,51 @@ let new_centroid td ~mean ~n ~cumn =
   begin match Float.Map.add td.centroids ~key:data.mean ~data with
   | `Duplicate -> failwith "Insert ignored!"
   | `Ok centroids ->
-    td.centroids <- centroids;
-    td.n <- td.n + data.n
+    { td with centroids; n = td.n + data.n }
   end
 
 let add_weight td nearest ~mean ~n =
-  if nearest.mean <> mean
-  then nearest.mean <- nearest.mean + (n * (mean - nearest.mean) / (nearest.n + n));
-  nearest.cumn <- nearest.cumn + n;
-  nearest.mean_cumn <- nearest.mean_cumn + n / 2.;
-  nearest.n <- nearest.n + n;
-  td.n <- td.n + n
+  let updated = {
+    mean =
+      if nearest.mean = mean
+      then nearest.mean
+      else nearest.mean + (n * (mean - nearest.mean) / (nearest.n + n));
+    cumn = nearest.cumn + n;
+    mean_cumn = nearest.mean_cumn + n / 2.;
+    n = nearest.n + n;
+  }
+  in
+  Float.Map.remove td.centroids nearest.mean
+  |> Float.Map.add ~key:updated.mean ~data:updated
+  |> function
+  | `Duplicate -> failwith "Update ignored!"
+  | `Ok centroids ->
+    { td with centroids; n = td.n + n }
 
 let cumulate td exact =
-  if (td.n = td.last_cumulate) ||
-     (not exact && td.settings.cx > 0.0 && td.settings.cx > td.n / td.last_cumulate)
-  then () else begin
-    let cumn = Float.Map.fold td.centroids ~init:0. ~f:(fun ~key:_ ~data cumn ->
-        data.mean_cumn <- cumn + data.n / 2.;
-        data.cumn <- cumn + data.n;
-        data.cumn
+  if (td.n = td.last_cumulate) || (not exact && td.settings.cx > 0.0 && td.settings.cx > td.n / td.last_cumulate)
+  then td
+  else begin
+    let cumn, centroids = Float.Map.fold td.centroids ~init:(0., Float.Map.empty) ~f:(fun ~key:_ ~data (cumn, acc) ->
+        let updated = { data with
+          mean_cumn = cumn + data.n / 2.;
+          cumn = cumn + data.n;
+        }
+        in
+        begin match Float.Map.add acc ~key:updated.mean ~data:updated with
+        | `Duplicate -> failwith "Cumulate ignored!"
+        | `Ok x -> updated.cumn, x
+        end
       )
     in
-    td.n <- cumn;
-    td.last_cumulate <- cumn
+    { td with centroids; n = cumn; last_cumulate = cumn }
   end
 
 let internal_digest td ~n ~mean =
   let nearest_is_fn fn nearest =
     Option.value_map ~default:false (fn td.centroids) ~f:(fun (k, _v) -> k = nearest.mean)
   in
-  begin match (find_nearest td mean), td.settings.delta with
+  let td = begin match (find_nearest td mean), td.settings.delta with
   | (Some nearest), _ when nearest.mean = mean ->
     add_weight td nearest ~mean ~n
   | (Some nearest), _ when nearest_is_fn Float.Map.min_elt nearest ->
@@ -108,7 +122,8 @@ let internal_digest td ~n ~mean =
     else new_centroid td ~mean ~n ~cumn:nearest.cumn
   | None, _ ->
     new_centroid td ~mean ~n ~cumn:0.0
-  end;
+  end
+  in
   cumulate td false
 
 let to_array td =
@@ -137,25 +152,29 @@ let shuffled_array td =
 
 let compress td =
   let arr = shuffled_array td in
-  td.centroids <- Float.Map.empty;
-  td.n <- 0.;
-  td.last_cumulate <- 0.;
-  Array.iter arr ~f:(fun { mean; n; _ } ->
-    internal_digest td ~n ~mean
-  );
+  let blank = { td with
+    centroids = Float.Map.empty;
+    n = 0.;
+    last_cumulate = 0.;
+  }
+  in
+  let td = Array.fold arr ~init:blank ~f:(fun acc { mean; n; _ } ->
+      internal_digest acc ~n ~mean
+    )
+  in
   cumulate td true
 
 let digest td ?(n = 1) ~mean =
-  internal_digest td ~n:(Int.to_float n) ~mean;
+  let td = internal_digest td ~n:(Int.to_float n) ~mean in
   begin match td.settings with
   | { delta = Compress delta; k; _ } when is_positive k && (size td |> of_int) > k / delta ->
     compress td
-  | _ -> ()
+  | _ -> td
   end
 
-let add td ?(n = 1) mean = digest td ~n ~mean
+let add ?(n = 1) ~mean td = digest td ~n ~mean
 
-let add_list td ?(n = 1) xs = List.iter xs ~f:(fun mean -> digest td ~n ~mean)
+let add_list ?(n = 1) xs td = List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
 
 let bounds td needle lens =
   let search kind =
@@ -180,66 +199,54 @@ let bounds td needle lens =
   end
 
 let percentile td p =
-  if Float.Map.is_empty td.centroids then None else begin
-    cumulate td true;
-    let h = Float.(td.n * p) in
+  if Float.Map.is_empty td.centroids then td, None else begin
+    let td = cumulate td true in
+    let h = td.n * p in
     begin match (bounds td h (fun { mean_cumn; _ } -> mean_cumn)), td.settings.delta with
     | (Lower x), _
     | (Upper x), _
-    | (Equal x), _ -> Some x.mean
+    | (Equal x), _ -> td, Some x.mean
     | (Both (lower, upper)), Compress _ ->
-      Some (lower.mean + (h - lower.mean_cumn) * (upper.mean - lower.mean) / (upper.mean_cumn - lower.mean_cumn))
-    | (Both (lower, _upper)), Discrete when h <= lower.cumn -> Some lower.mean
-    | (Both (_lower, upper)), Discrete -> Some upper.mean
-    | Neither, _ -> None
+      let num = lower.mean + (h - lower.mean_cumn) * (upper.mean - lower.mean) / (upper.mean_cumn - lower.mean_cumn) in
+      td, Some num
+    | (Both (lower, _upper)), Discrete when h <= lower.cumn -> td, Some lower.mean
+    | (Both (_lower, upper)), Discrete -> td, Some upper.mean
+    | Neither, _ -> td, None
     end
   end
 
-let summary td =
-  let mode = begin match td.settings.delta with
-  | Compress _ -> "approx"
-  | Discrete -> "exact"
-  end
-  in
-  let print_pct x = percentile td x |> Option.value_map ~f:Float.to_string ~default:"---" in
-  String.concat ~sep:"\n" [
-    sprintf "%s %f samples using %d centroids"
-      mode td.n (size td);
-    sprintf "min = %s" (print_pct 0.0);
-    sprintf "Q1  = %s" (print_pct 0.25);
-    sprintf "Q2  = %s" (print_pct 0.5);
-    sprintf "Q3  = %s" (print_pct 0.75);
-    sprintf "max = %s" (print_pct 1.0);
-  ]
+let percentiles td ps = List.fold_map ps ~init:td ~f:percentile
 
 let p_rank td p =
   begin match Float.Map.min_elt td.centroids with
-  | None -> None
-  | Some (_k, v) when p < v.mean -> Some 0.0
+  | None -> td, None
+  | Some (_k, v) when p < v.mean -> td, Some 0.0
   | Some _ ->
     begin match Float.Map.max_elt td.centroids with
-    | None -> None
-    | Some (_k, v) when p > v.mean -> Some 1.0
+    | None -> td, None
+    | Some (_k, v) when p > v.mean -> td, Some 1.0
     | Some _ ->
-      cumulate td true;
+      let td = cumulate td true in
       begin match (bounds td p (fun { mean; _ } -> mean)), td.settings.delta with
       | (Both (lower, _)), Discrete
       | (Lower lower), Discrete
-      | (Equal lower), Discrete -> Some (lower.cumn / td.n)
+      | (Equal lower), Discrete -> td, Some (lower.cumn / td.n)
 
       | Neither, Discrete
-      | (Upper _), Discrete -> None
+      | (Upper _), Discrete -> td, None
 
-      | (Equal x), Compress _ -> Some (x.mean_cumn / td.n)
+      | (Equal x), Compress _ -> td, Some (x.mean_cumn / td.n)
 
       | (Both (lower, upper)), Compress _ ->
         let num = lower.mean_cumn + ((p - lower.mean) * (upper.mean_cumn - lower.mean_cumn) / (upper.mean - lower.mean)) in
-        Some (num / td.n)
+        td, Some (num / td.n)
 
-      | _, Compress _ -> None
+      | _, Compress _ -> td, None
       end
     end
   end
+
+let p_ranks td ps = List.fold_map ps ~init:td ~f:p_rank
 
 module Testing = struct
   let centroid_to_yojson data basic =
@@ -268,13 +275,10 @@ module Testing = struct
 
   let compress_with_delta td delta =
     let settings = td.settings in
-    td.settings <- { td.settings with delta };
-    compress td;
-    td.settings <- settings
+    let updated = compress { td with settings = { td.settings with delta } } in
+    { updated with settings }
 
   let compress = compress
-
-  let size = size
 
   let min td = begin match Float.Map.min_elt td.centroids with
   | None -> `Null
