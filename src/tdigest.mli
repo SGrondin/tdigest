@@ -1,12 +1,30 @@
 open! Core_kernel
 
 type delta =
-| Compress of float
+| Merging of float
 | Discrete
+
+type k =
+| Manual
+| Automatic of float
+
+type cx =
+| Always
+| Growth of float
 
 type t
 
-val create: ?delta:delta -> ?k:int -> ?cx:float -> unit -> t
+type info = {
+  count: int;
+  size: int;
+  cumulates_count: int;
+  compress_count:int;
+  auto_compress_count: int;
+}
+
+val create: ?delta:delta -> ?compression:k -> ?refresh:cx -> unit -> t
+
+val info: t -> info
 
 val add: ?n:int -> mean:float -> t -> t
 
@@ -18,7 +36,7 @@ val p_ranks: t -> float list -> t * float option list
 val percentile: t -> float -> t * float option
 val percentiles: t -> float list -> t * float option list
 
-val size: t -> int
+val compress: ?delta:delta -> t -> t
 
 module Testing : sig
   val to_yojson:
@@ -30,10 +48,6 @@ module Testing : sig
                 [> `Assoc of (string * [> `Float of float ]) list ]
                   list ])
           list ]
-
-  val compress_with_delta: t -> delta -> t
-
-  val compress: t -> t
 
   val min:
     t ->

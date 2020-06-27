@@ -2,13 +2,21 @@ open! Core_kernel
 open Float
 
 type delta =
-| Compress of float
+| Merging of float
 | Discrete
+
+type k =
+| Manual
+| Automatic of float
+
+type cx =
+| Always
+| Growth of float
 
 type settings = {
   delta: delta;
-  k: float;
-  cx: float;
+  k: k;
+  cx: cx;
 }
 
 type centroid = {
@@ -18,11 +26,26 @@ type centroid = {
   n: float;
 }
 
+type stats = {
+  cumulates_count: int;
+  compress_count: int;
+  auto_compress_count: int;
+}
+
 type t = {
   settings: settings;
   centroids: centroid Float.Map.t;
   n: float;
   last_cumulate: float;
+  stats: stats;
+}
+
+type info = {
+  count: int;
+  size: int;
+  cumulates_count: int;
+  compress_count: int;
+  auto_compress_count: int;
 }
 
 type bounds =
@@ -32,17 +55,45 @@ type bounds =
 | Lower of centroid
 | Upper of centroid
 
-
-let create ?(delta = Compress 0.01) ?(k = 25) ?(cx = 1.1) () =
-  (* TODO: validate inputs *)
+let create ?(delta = Merging 0.01) ?(compression = Automatic 25.) ?(refresh = Growth 1.1) () =
+  let k = begin match compression with
+  | Manual -> compression
+  | Automatic x when Float.is_positive x -> compression
+  | Automatic 0. -> failwith "TDigest compression k parameter cannot be zero, set to Tdigest.Manual to disable automatic compression."
+  | Automatic x -> failwithf "TDigest compression k parameter must be positive, but was %f" x ()
+  end
+  in
+  let cx = begin match refresh with
+  | Always -> refresh
+  | Growth x when Float.is_positive x -> refresh
+  | Growth 0. -> failwith "TDigest refresh cx parameter cannot be zero, set to Tdigest.Always to disable caching of cumulative totals."
+  | Growth x -> failwithf "TDigest refresh cx parameter must be positive, but was %f" x ()
+  end
+  in
   {
-    settings = { delta; k = Int.to_float k; cx };
+    settings = {
+      delta;
+      k;
+      cx;
+    };
     centroids = Float.Map.empty;
     n = 0.;
     last_cumulate = 0.;
+    stats = {
+      cumulates_count = 0;
+      compress_count = 0;
+      auto_compress_count = 0;
+    };
   }
 
-let size td = Float.Map.length td.centroids
+let info { centroids; n; stats; _ } =
+  {
+    count = to_int n;
+    size = Float.Map.length centroids;
+    cumulates_count = stats.cumulates_count;
+    compress_count = stats.compress_count;
+    auto_compress_count = stats.auto_compress_count;
+  }
 
 let find_nearest td mean =
   begin match Float.Map.closest_key td.centroids `Less_or_equal_to mean with
@@ -58,11 +109,8 @@ let find_nearest td mean =
 
 let new_centroid td ~mean ~n ~cumn =
   let data = { mean; cumn; n; mean_cumn = n / 2. } in
-  begin match Float.Map.add td.centroids ~key:data.mean ~data with
-  | `Duplicate -> failwith "Insert ignored!"
-  | `Ok centroids ->
-    { td with centroids; n = td.n + data.n }
-  end
+  let centroids = Float.Map.add_exn td.centroids ~key:data.mean ~data in
+  { td with centroids; n = td.n + n }
 
 let add_weight td nearest ~mean ~n =
   let updated = {
@@ -75,15 +123,18 @@ let add_weight td nearest ~mean ~n =
     n = nearest.n + n;
   }
   in
-  Float.Map.remove td.centroids nearest.mean
-  |> Float.Map.add ~key:updated.mean ~data:updated
-  |> function
-  | `Duplicate -> failwith "Update ignored!"
-  | `Ok centroids ->
-    { td with centroids; n = td.n + n }
+  let centroids =
+    Float.Map.remove td.centroids nearest.mean
+    |> Float.Map.add_exn ~key:updated.mean ~data:updated
+  in
+  { td with centroids; n = td.n + n }
+
+let use_cache = function
+| { n; last_cumulate; settings = { cx = Growth cx; _ }; _ } when cx > n / last_cumulate -> true
+| _ -> false
 
 let cumulate td exact =
-  if (td.n = td.last_cumulate) || (not exact && td.settings.cx > 0.0 && td.settings.cx > td.n / td.last_cumulate)
+  if (td.n = td.last_cumulate) || (not exact && use_cache td)
   then td
   else begin
     let cumn, centroids = Float.Map.fold td.centroids ~init:(0., Float.Map.empty) ~f:(fun ~key:_ ~data (cumn, acc) ->
@@ -98,7 +149,12 @@ let cumulate td exact =
         end
       )
     in
-    { td with centroids; n = cumn; last_cumulate = cumn }
+    { td with
+      centroids;
+      n = cumn;
+      last_cumulate = cumn;
+      stats = { td.stats with cumulates_count = succ td.stats.cumulates_count }
+    }
   end
 
 let internal_digest td ~n ~mean =
@@ -114,7 +170,7 @@ let internal_digest td ~n ~mean =
     new_centroid td ~mean ~n ~cumn:td.n
   | (Some nearest), Discrete ->
     new_centroid td ~mean ~n ~cumn:nearest.cumn
-  | (Some nearest), Compress delta ->
+  | (Some nearest), Merging delta ->
     let p = nearest.mean_cumn / td.n in
     let max_n = round_down (4.0 * td.n * delta * p * (1.0 - p)) in
     if (max_n - nearest.n) >= n
@@ -130,7 +186,7 @@ let to_array td =
   begin match Float.Map.min_elt td.centroids with
   | None -> [||]
   | Some (_k, v) ->
-    let arr = Array.create ~len:(size td) v in
+    let arr = Array.create ~len:(Float.Map.length td.centroids) v in
     let _i = Float.Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data i ->
         Array.set arr i data;
         succ i
@@ -150,12 +206,16 @@ let shuffled_array td =
   in
   arr
 
-let compress td =
+let rebuild auto td =
   let arr = shuffled_array td in
   let blank = { td with
     centroids = Float.Map.empty;
     n = 0.;
     last_cumulate = 0.;
+    stats = { td.stats with
+      compress_count = succ td.stats.compress_count;
+      auto_compress_count = (if auto then succ else Fn.id) td.stats.auto_compress_count;
+    }
   }
   in
   let td = Array.fold arr ~init:blank ~f:(fun acc { mean; n; _ } ->
@@ -167,9 +227,18 @@ let compress td =
 let digest td ?(n = 1) ~mean =
   let td = internal_digest td ~n:(Int.to_float n) ~mean in
   begin match td.settings with
-  | { delta = Compress delta; k; _ } when is_positive k && (size td |> of_int) > k / delta ->
-    compress td
+  | { delta = Merging delta; k = Automatic k; _ } when (Float.Map.length td.centroids |> of_int) > k / delta ->
+    rebuild true td
   | _ -> td
+  end
+
+let compress ?delta td =
+  begin match delta with
+  | None -> rebuild false td
+  | Some delta ->
+    let settings = td.settings in
+    let updated = rebuild false { td with settings = { td.settings with delta } } in
+    { updated with settings }
   end
 
 let add ?(n = 1) ~mean td = digest td ~n ~mean
@@ -206,7 +275,7 @@ let percentile td p =
     | (Lower x), _
     | (Upper x), _
     | (Equal x), _ -> td, Some x.mean
-    | (Both (lower, upper)), Compress _ ->
+    | (Both (lower, upper)), Merging _ ->
       let num = lower.mean + (h - lower.mean_cumn) * (upper.mean - lower.mean) / (upper.mean_cumn - lower.mean_cumn) in
       td, Some num
     | (Both (lower, _upper)), Discrete when h <= lower.cumn -> td, Some lower.mean
@@ -235,13 +304,13 @@ let p_rank td p =
       | Neither, Discrete
       | (Upper _), Discrete -> td, None
 
-      | (Equal x), Compress _ -> td, Some (x.mean_cumn / td.n)
+      | (Equal x), Merging _ -> td, Some (x.mean_cumn / td.n)
 
-      | (Both (lower, upper)), Compress _ ->
+      | (Both (lower, upper)), Merging _ ->
         let num = lower.mean_cumn + ((p - lower.mean) * (upper.mean_cumn - lower.mean_cumn) / (upper.mean - lower.mean)) in
         td, Some (num / td.n)
 
-      | _, Compress _ -> td, None
+      | _, Merging _ -> td, None
       end
     end
   end
@@ -272,13 +341,6 @@ module Testing = struct
       )
     in
     `Assoc ["centroids", `List ll]
-
-  let compress_with_delta td delta =
-    let settings = td.settings in
-    let updated = compress { td with settings = { td.settings with delta } } in
-    { updated with settings }
-
-  let compress = compress
 
   let min td = begin match Float.Map.min_elt td.centroids with
   | None -> `Null

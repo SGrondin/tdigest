@@ -33,7 +33,7 @@ let () =
       "consumes increasing-valued points", `Quick, (fun () ->
         let xs = List.init 100 ~f:(fun i -> i * 10 |> Float.of_int) in
         let td =
-          Tdigest.create ~delta:(Tdigest.Compress 0.001) ~k:0 ()
+          Tdigest.create ~delta:(Tdigest.Merging 0.001) ~compression:Tdigest.Manual ()
           |> Tdigest.add_list xs
         in
         let against = List.init 100 ~f:(fun i -> b (i * 10 |> Float.of_int) 1) in
@@ -43,7 +43,7 @@ let () =
       "consumes decreasing-valued points", `Quick, (fun () ->
         let xs = List.init 100 ~f:(fun i -> (99 - i) * 10 |> Float.of_int) in
         let td =
-          Tdigest.create ~delta:(Tdigest.Compress 0.001) ~k:0 ()
+          Tdigest.create ~delta:(Tdigest.Merging 0.001) ~compression:Tdigest.Manual ()
           |> Tdigest.add_list xs
         in
         let against = List.init 100 ~f:(fun i -> b (i * 10 |> Float.of_int) 1) in
@@ -65,7 +65,7 @@ let () =
 
       "handles multiple duplicates", `Quick, (fun () ->
         let td =
-          Tdigest.create ~delta:(Tdigest.Compress 1.) ~k:0 ~cx:0. ()
+          Tdigest.create ~delta:(Tdigest.Merging 1.) ~compression:Tdigest.Manual ~refresh:Tdigest.Always ()
           |> Fn.apply_n_times
             ~n:10
             (fun td ->
@@ -84,15 +84,15 @@ let () =
       "compresses points and preserves bounds", `Quick, (fun () ->
         let xs = List.init 100 ~f:(fun i -> i * 10 |> Float.of_int) in
         let td =
-          Tdigest.create ~delta:(Tdigest.Compress 0.001) ~k:0 ()
+          Tdigest.create ~delta:(Tdigest.Merging 0.001) ~compression:Tdigest.Manual ()
           |> Tdigest.add_list xs
         in
 
-        let size = Tdigest.size td in
+        let size = (Tdigest.info td).size in
         if size <> 100 then failwithf "Original size: %d <> 100" size ();
 
-        let td = Tdigest.Testing.compress_with_delta td (Tdigest.Compress 0.1) in
-        let size = Tdigest.size td in
+        let td = Tdigest.compress ~delta:(Tdigest.Merging 0.1) td in
+        let size = (Tdigest.info td).size in
         if size >= 100 then failwithf "Compressed size: %d >= 100" size ();
 
         Json_diff.assert_equal (Tdigest.Testing.min td) (b 0. 1 |> basic_to_yojson);
@@ -105,7 +105,7 @@ let () =
           |> Array.fold ~init:(Tdigest.create ()) ~f:(fun td x -> Tdigest.add td ~mean:x)
         in
 
-        let size = Tdigest.size td in
+        let size = (Tdigest.info td).size in
         if size >= 10_000 then failwithf "Size: %d >= 10,000" size ();
 
         Json_diff.assert_equal (Tdigest.Testing.min td) (b 0. 1 |> basic_to_yojson);
@@ -178,7 +178,7 @@ let () =
 
       "from four points is same as from multiples of those points", `Quick, (fun () ->
         let td =
-          Tdigest.create ~delta:(Tdigest.Compress 0.) ~k:0 ()
+          Tdigest.create ~delta:(Tdigest.Merging 0.) ~compression:Tdigest.Manual ()
           |> Tdigest.add_list [10.; 11.; 12.; 13.]
         in
         let td, result1 = Tdigest.p_ranks td [9.; 10.; 11.; 12.; 13.; 14.] in
@@ -197,7 +197,7 @@ let () =
           |> Fn.apply_n_times
             ~n:100_000
             (fun td -> Tdigest.add td ~mean:(Random.float 1.))
-          |> Tdigest.Testing.compress
+          |> Tdigest.compress
         in
         let _i, max_err, _td =
           Fn.apply_n_times ~n:100 (fun (i, max_err, td) ->
@@ -211,7 +211,7 @@ let () =
 
       "from an exact match", `Quick, (fun () ->
         let td =
-          Tdigest.create ~delta:(Tdigest.Compress 0.001) ~k:0 ()
+          Tdigest.create ~delta:(Tdigest.Merging 0.001) ~compression:Tdigest.Manual ()
           |> Fn.apply_n_times ~n:10 (Tdigest.add_list [10.; 20.; 30.])
         in
         let _td, q = Tdigest.p_rank td 20. in
@@ -272,7 +272,7 @@ let () =
           |> Fn.apply_n_times
             ~n:100_000
             (fun td -> Tdigest.add td ~mean:(Random.float 1.))
-          |> Tdigest.Testing.compress
+          |> Tdigest.compress
         in
         let _i, max_err, _td =
           Fn.apply_n_times ~n:100 (fun (i, max_err, td) ->
