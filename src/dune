@@ -1,9 +1,9 @@
 (library
   (name tdigest)
+  (public_name tdigest)
   (libraries
     core_kernel
-  )
-  (ocamlopt_flags -O3 -unbox-closures))
+  ))
 
 (env
   (dev

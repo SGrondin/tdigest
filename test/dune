@@ -8,8 +8,5 @@
     alcotest
     yojson
   )
-  (preprocess (pps
-    ppx_jane
-  ))
   (ocamlopt_flags -Oclassic)
 )

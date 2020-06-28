@@ -1,2 +1,3 @@
-(lang dune 2.4)
-(name scaffolding)
+(lang dune 1.9)
+(name tdigest)
+(version 0.1.0)

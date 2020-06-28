@@ -9,7 +9,7 @@ The median of a list of medians is not necessarily equal to the median of the wh
 
 The T-Digest can estimate percentiles or quantiles extremely accurately even at the tails, while using a fraction of the space.
 
-Additionally, the T-Digest is concatenable, making a good fit for distributed systems. The internal state of a T-Digest can be exported as a binary string, and the concatenation of any number of those strings can then be imported to form a new T-Digest.
+Additionally, the T-Digest is concatenable, making it a good fit for distributed systems. The internal state of a T-Digest can be exported as a binary string, and the concatenation of any number of those strings can then be imported to form a new T-Digest.
 
 Links:
 - [A simple overview of the T-Digest](https://dataorigami.net/blogs/napkin-folding/19055451-percentile-and-quantile-estimation-of-big-data-the-t-digest)

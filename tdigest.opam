@@ -17,11 +17,12 @@ Additionally, the T-Digest is concatenable, making a good fit for distributed sy
 license: "MIT"
 tags: []
 homepage: "https://github.com/SGrondin/tdigest"
+dev-repo: "git://github.com/SGrondin/tdigest"
 doc: "https://github.com/SGrondin/tdigest"
 bug-reports: "https://github.com/SGrondin/tdigest/issues"
 depends: [
   "ocaml" {>= "4.08.1"}
-  "dune" {build & >= "1.9.0"}
+  "dune" {>= "1.9.0"}
 
   "core_kernel" { >= "v0.13.0" & < "v0.15.0" }
 
