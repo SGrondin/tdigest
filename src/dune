@@ -3,9 +3,6 @@
   (libraries
     core_kernel
   )
-  (preprocess (pps
-    ppx_jane
-  ))
   (ocamlopt_flags -O3 -unbox-closures))
 
 (env

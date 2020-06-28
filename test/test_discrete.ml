@@ -29,7 +29,7 @@ let () =
       "consumes same-valued points into a single point", `Quick, (fun () ->
         let td =
           Tdigest.create ~delta:(Tdigest.Discrete) ()
-          |> Fn.apply_n_times ~n:100 (Tdigest.add ~mean:1000.)
+          |> Fn.apply_n_times ~n:100 (Tdigest.add ~data:1000.)
         in
         check td [b 1000. 100]
       );
@@ -48,9 +48,9 @@ let () =
           Tdigest.create ~delta:(Tdigest.Discrete) ()
           |> Fn.apply_n_times ~n:10 (fun td ->
             td
-            |> Tdigest.add ~mean:0.
-            |> Tdigest.add ~mean:1.
-            |> Tdigest.add ~mean:0.5
+            |> Tdigest.add ~data:0.
+            |> Tdigest.add ~data:1.
+            |> Tdigest.add ~data:0.5
           )
         in
         check td [b 0. 10; b 0.5 10; b 1. 10]
@@ -62,7 +62,7 @@ let () =
       "from a single point", `Quick, (fun () ->
         let td =
           Tdigest.create ~delta:(Tdigest.Discrete) ()
-          |> Tdigest.add ~mean:0.
+          |> Tdigest.add ~data:0.
         in
         check_p_ranks td
           [-1.5; 0.; 0.5; 1.; 1.5]
@@ -136,7 +136,7 @@ let () =
       "from a single point", `Quick, (fun () ->
         let td =
           Tdigest.create ~delta:(Tdigest.Discrete) ()
-          |> Tdigest.add ~mean:0.
+          |> Tdigest.add ~data:0.
         in
         check_percentiles td
           [0.; 0.5; 1.]

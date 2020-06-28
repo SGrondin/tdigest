@@ -1,5 +1,8 @@
 (tests
-  (names test_discrete test_digest test_tdigest)
+  (names
+    test_discrete
+    test_tdigest
+  )
   (libraries
     tdigest
     alcotest

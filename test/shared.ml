@@ -9,6 +9,10 @@ let b mean n = { mean; n = Int.to_float n }
 
 let basic_to_yojson { mean; n } : Yojson.Safe.t = `Assoc ["mean", `Float mean; "n", `Float n]
 
+let pair_to_yojson = function
+| None -> `Null
+| Some (mean, n) -> basic_to_yojson { mean; n }
+
 let floats_to_yojson ll = `Assoc ["value", `List (List.map ll ~f:(fun x -> `Float x))]
 
 let float_opts_to_yojson ll = `Assoc [
@@ -28,7 +32,7 @@ let check_p_ranks = check_fn ~fn:Tdigest.p_ranks
 let check_percentiles = check_fn ~fn:Tdigest.percentiles
 
 let check td vs =
-  let json : Yojson.Safe.t = Tdigest.Testing.to_yojson td true in
+  let json : Yojson.Safe.t = Tdigest.Testing.to_yojson td in
   let against =
     `Assoc [
       "centroids", `List (List.map vs ~f:basic_to_yojson)

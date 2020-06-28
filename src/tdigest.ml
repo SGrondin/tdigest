@@ -35,6 +35,8 @@ type stats = {
 type t = {
   settings: settings;
   centroids: centroid Float.Map.t;
+  mutable min: centroid option;
+  mutable max: centroid option;
   n: float;
   last_cumulate: float;
   stats: stats;
@@ -46,7 +48,7 @@ type info = {
   cumulates_count: int;
   compress_count: int;
   auto_compress_count: int;
-}
+} [@@deriving sexp]
 
 type bounds =
 | Neither
@@ -55,19 +57,35 @@ type bounds =
 | Lower of centroid
 | Upper of centroid
 
-let create ?(delta = Merging 0.01) ?(compression = Automatic 25.) ?(refresh = Growth 1.1) () =
-  let k = begin match compression with
-  | Manual -> compression
-  | Automatic x when Float.is_positive x -> compression
-  | Automatic 0. -> failwith "TDigest compression k parameter cannot be zero, set to Tdigest.Manual to disable automatic compression."
-  | Automatic x -> failwithf "TDigest compression k parameter must be positive, but was %f" x ()
+let get_min = function
+| { min = (Some _ as x); _ } -> x
+| { min = None; centroids; _ } when Float.Map.is_empty centroids -> None
+| ({ min = None; _ } as td) ->
+  let min = Float.Map.min_elt td.centroids |> Option.map ~f:snd in
+  td.min <- min;
+  min
+
+let get_max = function
+| { max = (Some _ as x); _ } -> x
+| { max = None; centroids; _ } when Float.Map.is_empty centroids -> None
+| ({ max = None; _ } as td) ->
+  let max = Float.Map.max_elt td.centroids |> Option.map ~f:snd in
+  td.max <- max;
+  max
+
+let create ?(delta = Merging 0.01) ?(k = Automatic 25.) ?(cx = Growth 1.1) () =
+  let k = begin match k with
+  | Manual -> k
+  | Automatic x when Float.is_positive x -> k
+  | Automatic 0. -> failwith "TDigest k parameter cannot be zero, set to Tdigest.Manual to disable automatic compression."
+  | Automatic x -> failwithf "TDigest k parameter must be positive, but was %f" x ()
   end
   in
-  let cx = begin match refresh with
-  | Always -> refresh
-  | Growth x when Float.is_positive x -> refresh
-  | Growth 0. -> failwith "TDigest refresh cx parameter cannot be zero, set to Tdigest.Always to disable caching of cumulative totals."
-  | Growth x -> failwithf "TDigest refresh cx parameter must be positive, but was %f" x ()
+  let cx = begin match cx with
+  | Always -> cx
+  | Growth x when Float.is_positive x -> cx
+  | Growth 0. -> failwith "TDigest cx parameter cannot be zero, set to Tdigest.Always to disable caching of cumulative totals."
+  | Growth x -> failwithf "TDigest cx parameter must be positive, but was %f" x ()
   end
   in
   {
@@ -77,6 +95,8 @@ let create ?(delta = Merging 0.01) ?(compression = Automatic 25.) ?(refresh = Gr
       cx;
     };
     centroids = Float.Map.empty;
+    min = None;
+    max = None;
     n = 0.;
     last_cumulate = 0.;
     stats = {
@@ -86,14 +106,13 @@ let create ?(delta = Merging 0.01) ?(compression = Automatic 25.) ?(refresh = Gr
     };
   }
 
-let info { centroids; n; stats; _ } =
-  {
-    count = to_int n;
-    size = Float.Map.length centroids;
-    cumulates_count = stats.cumulates_count;
-    compress_count = stats.compress_count;
-    auto_compress_count = stats.auto_compress_count;
-  }
+let info { centroids; n; stats; _ } = {
+  count = to_int n;
+  size = Float.Map.length centroids;
+  cumulates_count = stats.cumulates_count;
+  compress_count = stats.compress_count;
+  auto_compress_count = stats.auto_compress_count;
+}
 
 let find_nearest td mean =
   begin match Float.Map.closest_key td.centroids `Less_or_equal_to mean with
@@ -107,10 +126,44 @@ let find_nearest td mean =
   | None -> None
   end
 
+let use_cache = function
+| { n; last_cumulate; settings = { cx = Growth cx; _ }; _ } when cx > n / last_cumulate -> true
+| _ -> false
+
+let cumulate td ~exact =
+  if (td.n = td.last_cumulate) || (not exact && use_cache td)
+  then td
+  else begin
+    let cumn = ref 0. in
+    let centroids = Float.Map.map td.centroids ~f:(fun data ->
+        let updated = { data with
+          mean_cumn = !cumn + data.n / 2.;
+          cumn = !cumn + data.n;
+        }
+        in
+        cumn := updated.cumn;
+        updated
+      )
+    in
+    { td with
+      centroids;
+      min = None;
+      max = None;
+      n = !cumn;
+      last_cumulate = !cumn;
+      stats = { td.stats with cumulates_count = succ td.stats.cumulates_count }
+    }
+  end
+
 let new_centroid td ~mean ~n ~cumn =
   let data = { mean; cumn; n; mean_cumn = n / 2. } in
   let centroids = Float.Map.add_exn td.centroids ~key:data.mean ~data in
-  { td with centroids; n = td.n + n }
+  { td with
+    centroids;
+    min = None;
+    max = None;
+    n = td.n + n;
+  }
 
 let add_weight td nearest ~mean ~n =
   let updated = {
@@ -127,46 +180,23 @@ let add_weight td nearest ~mean ~n =
     Float.Map.remove td.centroids nearest.mean
     |> Float.Map.add_exn ~key:updated.mean ~data:updated
   in
-  { td with centroids; n = td.n + n }
-
-let use_cache = function
-| { n; last_cumulate; settings = { cx = Growth cx; _ }; _ } when cx > n / last_cumulate -> true
-| _ -> false
-
-let cumulate td exact =
-  if (td.n = td.last_cumulate) || (not exact && use_cache td)
-  then td
-  else begin
-    let cumn, centroids = Float.Map.fold td.centroids ~init:(0., Float.Map.empty) ~f:(fun ~key:_ ~data (cumn, acc) ->
-        let updated = { data with
-          mean_cumn = cumn + data.n / 2.;
-          cumn = cumn + data.n;
-        }
-        in
-        begin match Float.Map.add acc ~key:updated.mean ~data:updated with
-        | `Duplicate -> failwith "Cumulate ignored!"
-        | `Ok x -> updated.cumn, x
-        end
-      )
-    in
-    { td with
-      centroids;
-      n = cumn;
-      last_cumulate = cumn;
-      stats = { td.stats with cumulates_count = succ td.stats.cumulates_count }
-    }
-  end
+  { td with
+    centroids;
+    n = td.n + n;
+    min = None;
+    max = None;
+  }
 
 let internal_digest td ~n ~mean =
-  let nearest_is_fn fn nearest =
-    Option.value_map ~default:false (fn td.centroids) ~f:(fun (k, _v) -> k = nearest.mean)
+  let nearest_is_boundary boundary nearest =
+    Option.value_map boundary ~default:false ~f:(fun { mean; _ } -> mean = nearest.mean)
   in
   let td = begin match (find_nearest td mean), td.settings.delta with
   | (Some nearest), _ when nearest.mean = mean ->
     add_weight td nearest ~mean ~n
-  | (Some nearest), _ when nearest_is_fn Float.Map.min_elt nearest ->
+  | (Some nearest), _ when nearest_is_boundary (get_min td) nearest ->
     new_centroid td ~mean ~n ~cumn:0.0
-  | (Some nearest), _ when nearest_is_fn Float.Map.max_elt nearest ->
+  | (Some nearest), _ when nearest_is_boundary (get_max td) nearest ->
     new_centroid td ~mean ~n ~cumn:td.n
   | (Some nearest), Discrete ->
     new_centroid td ~mean ~n ~cumn:nearest.cumn
@@ -180,23 +210,16 @@ let internal_digest td ~n ~mean =
     new_centroid td ~mean ~n ~cumn:0.0
   end
   in
-  cumulate td false
-
-let to_array td =
-  begin match Float.Map.min_elt td.centroids with
-  | None -> [||]
-  | Some (_k, v) ->
-    let arr = Array.create ~len:(Float.Map.length td.centroids) v in
-    let _i = Float.Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data i ->
-        Array.set arr i data;
-        succ i
-      )
-    in
-    arr
-  end
+  cumulate td ~exact:false
 
 let shuffled_array td =
-  let arr = to_array td in
+  if Float.Map.is_empty td.centroids then [||] else
+  let arr = Array.create ~len:(Float.Map.length td.centroids) { mean = 0.; n = 0.; cumn = 0.; mean_cumn = 0. } in
+  let _i = Float.Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data i ->
+      Array.set arr i data;
+      succ i
+    )
+  in
   let _i = Array.fold_right arr ~init:(Array.length arr) ~f:(fun _x i ->
       let random = (Random.float 1.0) * (of_int i) |> to_int in
       let current = pred i in
@@ -206,10 +229,12 @@ let shuffled_array td =
   in
   arr
 
-let rebuild auto td =
+let rebuild td ~auto =
   let arr = shuffled_array td in
   let blank = { td with
     centroids = Float.Map.empty;
+    min = None;
+    max = None;
     n = 0.;
     last_cumulate = 0.;
     stats = { td.stats with
@@ -222,28 +247,73 @@ let rebuild auto td =
       internal_digest acc ~n ~mean
     )
   in
-  cumulate td true
+  cumulate td ~exact:true
 
 let digest td ?(n = 1) ~mean =
   let td = internal_digest td ~n:(Int.to_float n) ~mean in
   begin match td.settings with
   | { delta = Merging delta; k = Automatic k; _ } when (Float.Map.length td.centroids |> of_int) > k / delta ->
-    rebuild true td
+    rebuild td ~auto:true
   | _ -> td
   end
 
 let compress ?delta td =
   begin match delta with
-  | None -> rebuild false td
+  | None -> rebuild td ~auto:false
   | Some delta ->
     let settings = td.settings in
-    let updated = rebuild false { td with settings = { td.settings with delta } } in
+    let updated = rebuild { td with settings = { td.settings with delta } } ~auto:false in
     { updated with settings }
   end
 
-let add ?(n = 1) ~mean td = digest td ~n ~mean
+let add ?(n = 1) ~data td = digest td ~n ~mean:data
 
 let add_list ?(n = 1) xs td = List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
+
+let to_string td =
+  let buf = Buffer.create Int.(Float.Map.length td.centroids * 16) in
+  let add_float f =
+    let v = Int64.bits_of_float f in
+    let rec loop = function
+    | 8 -> ()
+    | i ->
+      Buffer.add_char buf Int64.(255L land (shift_right v Int.(i * 8)) |> to_int_exn |> Char.of_int_exn);
+      loop (succ i)
+    in
+    loop 0
+  in
+  Float.Map.iter td.centroids ~f:(fun { mean; n; _ } ->
+    add_float mean;
+    add_float n
+  );
+  td, (Buffer.contents buf)
+
+let of_string ?(delta = Merging 0.01) ?(k = Automatic 25.) ?(cx = Growth 1.1) str =
+  if Int.(String.length str % 16 <> 0) then raise (Invalid_argument "Invalid string length for Tdigest.of_string");
+  let td = create ~delta ~k ~cx () in
+  let _i, _mean, _n, centroids = String.fold str ~init:(0, 0L, 0L, Float.Map.empty) ~f:(fun (i, pmean, pn, acc) c ->
+      let x = c |> Char.to_int |> Int64.of_int_exn in
+      begin match i with
+      | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 ->
+        let mean = Int64.(pmean lor (shift_left x Int.(i * 8))) in
+        (succ i, mean, pn, acc)
+      | 8 | 9 | 10 | 11 | 12 | 13 | 14 ->
+        let n = Int64.(pn lor (shift_left x Int.((i - 8) * 8))) in
+        (succ i, pmean, n, acc)
+      | 15 ->
+        let mean = Int64.float_of_bits pmean in
+        let n = Int64.(pn lor (shift_left x 56) |> float_of_bits) in
+        let acc = Float.Map.update acc mean ~f:(function
+          | None -> { mean; n; cumn = 0.; mean_cumn = 0. }
+          | Some c -> { c with n = c.n + n }
+          )
+        in
+        (0, 0L, 0L, acc)
+      | x -> failwithf "Tdigest.of_string: impossible case '%d'. Please report this bug." x ()
+      end
+    )
+  in
+  rebuild { td with centroids } ~auto:true
 
 let bounds td needle lens =
   let search kind =
@@ -251,25 +321,22 @@ let bounds td needle lens =
       ~compare:(fun ~key:_ ~data x -> compare (lens data) x)
   in
   begin match search `Last_less_than_or_equal_to with
-  | Some (_k, v) when (lens v) = needle ->
-    Equal v
+  | Some (_k, v) when (lens v) = needle -> Equal v
   | Some (_k1, v1) ->
     begin match search `First_strictly_greater_than with
-    | Some (_k2, v2) ->
-      Both (v1, v2)
-    | None ->
-      Lower v1
+    | Some (_k2, v2) -> Both (v1, v2)
+    | None -> Lower v1
     end
   | None ->
-    begin match Float.Map.min_elt td.centroids with
-    | Some (_k, v) -> Upper v
+    begin match get_min td with
+    | Some v -> Upper v
     | None -> Neither
     end
   end
 
 let percentile td p =
   if Float.Map.is_empty td.centroids then td, None else begin
-    let td = cumulate td true in
+    let td = cumulate td ~exact:true in
     let h = td.n * p in
     begin match (bounds td h (fun { mean_cumn; _ } -> mean_cumn)), td.settings.delta with
     | (Lower x), _
@@ -287,15 +354,15 @@ let percentile td p =
 let percentiles td ps = List.fold_map ps ~init:td ~f:percentile
 
 let p_rank td p =
-  begin match Float.Map.min_elt td.centroids with
+  begin match get_min td with
   | None -> td, None
-  | Some (_k, v) when p < v.mean -> td, Some 0.0
+  | Some v when p < v.mean -> td, Some 0.0
   | Some _ ->
-    begin match Float.Map.max_elt td.centroids with
+    begin match get_max td with
     | None -> td, None
-    | Some (_k, v) when p > v.mean -> td, Some 1.0
+    | Some v when p > v.mean -> td, Some 1.0
     | Some _ ->
-      let td = cumulate td true in
+      let td = cumulate td ~exact:true in
       begin match (bounds td p (fun { mean; _ } -> mean)), td.settings.delta with
       | (Both (lower, _)), Discrete
       | (Lower lower), Discrete
@@ -318,37 +385,19 @@ let p_rank td p =
 let p_ranks td ps = List.fold_map ps ~init:td ~f:p_rank
 
 module Testing = struct
-  let centroid_to_yojson data basic =
-    let base = [
-      "mean", `Float data.mean;
-      "n", `Float data.n;
-    ]
-    in
-    `Assoc (
-      if basic then base else ("cumn", `Float data.cumn) :: ("mean_cumn", `Float data.mean_cumn) :: base
-    )
 
-  let to_yojson td basic =
+  let to_yojson td =
     let ll = Float.Map.fold_right td.centroids ~init:[] ~f:(fun ~key:_ ~data acc ->
-        let base = [
+        `Assoc [
           "mean", `Float data.mean;
           "n", `Float data.n;
-        ]
-        in
-        `Assoc (
-          if basic then base else ("cumn", `Float data.cumn) :: ("mean_cumn", `Float data.mean_cumn) :: base
-        ) :: acc
+        ] :: acc
       )
     in
     `Assoc ["centroids", `List ll]
 
-  let min td = begin match Float.Map.min_elt td.centroids with
-  | None -> `Null
-  | Some (_k, v) -> centroid_to_yojson v true
-  end
+  let min td = Option.map (get_min td) ~f:(fun { mean; n; _ } -> mean, n)
 
-  let max td = begin match Float.Map.max_elt td.centroids with
-  | None -> `Null
-  | Some (_k, v) -> centroid_to_yojson v true
-  end
+  let max td = Option.map (get_max td) ~f:(fun { mean; n; _ } -> mean, n)
+
 end

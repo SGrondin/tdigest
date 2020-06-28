@@ -1,5 +1,5 @@
 (executable
-  (name app)
+  (name bench)
   (libraries
     tdigest
 
