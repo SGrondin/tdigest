@@ -22,3 +22,6 @@ This library started off as a port of [Will Welch's JavaScript implementation](h
 
 The API is well documented [here](https://github.com/SGrondin/tdigest/blob/master/src/tdigest.mli).
 
+```sh
+opam install tdigest
+```
