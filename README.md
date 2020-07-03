@@ -25,3 +25,9 @@ The API is well documented [here](https://github.com/SGrondin/tdigest/blob/maste
 ```sh
 opam install tdigest
 ```
+
+## Performance
+
+On a 2018 MacBook Pro, it can incorporate 1,000,000 random floating points in just 800ms.
+
+Exporting and importing state (`to_string`/`of_string`) is essentially free.
