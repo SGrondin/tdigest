@@ -221,7 +221,7 @@ let shuffled_array td =
     )
   in
   let _i = Array.fold_right arr ~init:(Array.length arr) ~f:(fun _x i ->
-      let random = (Random.float 1.0) * (of_int i) |> to_int in
+      let random = Random.float (of_int i) |> to_int in
       let current = pred i in
       Array.swap arr random current;
       current
