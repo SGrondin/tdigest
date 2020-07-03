@@ -10,7 +10,7 @@ Size: %d
 # Auto Compressions: %d|s} x.count x.size x.cumulates_count x.compress_count x.auto_compress_count
 
 let () =
-  let arr = Array.init 1_000_000 ~f:(fun _i -> Random.float 1.) in
+  let arr = Array.init 2_000_000 ~f:(fun _i -> Random.float 1.) in
   let td = Tdigest.create () in
 
   let t0 = Time_now.nanoseconds_since_unix_epoch () in

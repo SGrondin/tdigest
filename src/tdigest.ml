@@ -115,10 +115,17 @@ let info { centroids; n; stats; _ } = {
 }
 
 let find_nearest td mean =
-  begin match Float.Map.closest_key td.centroids `Less_or_equal_to mean with
+  let gt = ref None in
+  let lte = Float.Map.binary_search td.centroids `Last_less_than_or_equal_to mean ~compare:(fun ~key ~data against ->
+      let x = compare key against in
+      if Int.is_positive x then gt := Some (key, data);
+      x
+    )
+  in
+  begin match lte with
   | Some (k, v) when mean = k -> Some v
   | Some (k1, v1) ->
-    begin match Float.Map.closest_key td.centroids `Greater_than mean with
+    begin match !gt with
     | None -> None
     | Some (k2, _v2) when (mean - k1) < (k2 - mean) -> Some v1
     | Some (_k2, v2) -> Some v2
@@ -316,14 +323,17 @@ let of_string ?(delta = Merging 0.01) ?(k = Automatic 25.) ?(cx = Growth 1.1) st
   rebuild { td with centroids } ~auto:true
 
 let bounds td needle lens =
-  let search kind =
-    Float.Map.binary_search td.centroids kind needle
-      ~compare:(fun ~key:_ ~data x -> compare (lens data) x)
+  let gt = ref None in
+  let lte = Float.Map.binary_search td.centroids `Last_less_than_or_equal_to needle ~compare:(fun ~key ~data against ->
+      let x = compare (lens data) against in
+      if Int.is_positive x then gt := Some (key, data);
+      x
+    )
   in
-  begin match search `Last_less_than_or_equal_to with
+  begin match lte with
   | Some (_k, v) when (lens v) = needle -> Equal v
   | Some (_k1, v1) ->
-    begin match search `First_strictly_greater_than with
+    begin match !gt with
     | Some (_k2, v2) -> Both (v1, v2)
     | None -> Lower v1
     end
