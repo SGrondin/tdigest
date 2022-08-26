@@ -53,7 +53,7 @@ type info = {
 
 type bounds =
   | Neither
-  | Both    of (centroid * centroid)
+  | Both    of centroid * centroid
   | Equal   of centroid
   | Lower   of centroid
   | Upper   of centroid
