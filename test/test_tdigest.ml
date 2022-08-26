@@ -233,4 +233,21 @@ let () =
               let td2 = Tdigest.of_string export in
               Json_diff.assert_equal (Tdigest.Testing.to_yojson td1) (Tdigest.Testing.to_yojson td2) );
         ] );
+      ( "merge",
+        [
+          ( "incorporates all points",
+            `Quick,
+            fun () ->
+              let xs1 = [ 3.0; 4.0; 3.5; 7.0 ] in
+              let xs2 = [ 3.0; 1.0; 6.5; 9.0 ] in
+              let td1 = Tdigest.create () |> Tdigest.add_list (xs1 @ xs2) in
+              let td2 =
+                let a = Tdigest.create () |> Tdigest.add_list xs1 in
+                let b = Tdigest.create () |> Tdigest.add_list xs2 in
+                Tdigest.merge [ a; b ]
+              in
+              check_percentiles td1 [ 0.0; 0.25; 0.50; 0.75; 1.0 ] [ 1.0; 3.0; 3.75; 6.75; 9.0 ];
+              check_percentiles td2 [ 0.0; 0.25; 0.50; 0.75; 1.0 ] [ 1.0; 3.0; 3.75; 6.75; 9.0 ];
+              Json_diff.assert_equal (Tdigest.Testing.to_yojson td1) (Tdigest.Testing.to_yojson td2) );
+        ] );
     ]

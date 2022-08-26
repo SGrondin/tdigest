@@ -93,6 +93,13 @@ val add : ?n:int -> data:float -> t -> t
 val add_list : ?n:int -> float list -> t -> t
 
 (**
+   [Tdigest.merge ?delta ?k ?cx tdigests]
+
+   Efficiently combine multiple Tdigests into a new one.
+*)
+val merge : ?delta:delta -> ?k:k -> ?cx:cx -> t list -> t
+
+(**
    [Tdigest.p_rank td q]
    For a value [q] estimate the percentage ([0..1]) of values [<= q].
 
