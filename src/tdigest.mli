@@ -5,16 +5,16 @@ open! Core_kernel
    [~delta:Discrete] switches off TDigest behavior and treats the distribution as discrete, with no merging and exact values reported.
 *)
 type delta =
-| Merging of float
-| Discrete
+  | Merging  of float
+  | Discrete
 
 (**
    [k] is a size threshold that triggers recompression as the TDigest grows during input.
    [~k:Manual] disables automatic recompression.
 *)
 type k =
-| Manual
-| Automatic of float
+  | Manual
+  | Automatic of float
 
 (**
    [cx] (default: [1.1]) specifies how often to update cached cumulative totals used for quantile estimation during ingest.
@@ -22,8 +22,8 @@ type k =
    [~cx:Always] will recompute cumulatives on every new datapoint, but the performance drops by 15-25x or even more depending on the size of the dataset.
 *)
 type cx =
-| Always
-| Growth of float
+  | Always
+  | Growth of float
 
 type t
 
@@ -42,7 +42,7 @@ type info = {
   count: int;
   size: int;
   cumulates_count: int;
-  compress_count:int;
+  compress_count: int;
   auto_compress_count: int;
 }
 
@@ -61,7 +61,7 @@ type info = {
    This is a tradeoff between performance and accuracy.
    [~cx:Always] will recompute cumulatives on every new datapoint, but the performance drops by 15-25x or even more depending on the size of the dataset.
 *)
-val create: ?delta:delta -> ?k:k -> ?cx:cx -> unit -> t
+val create : ?delta:delta -> ?k:k -> ?cx:cx -> unit -> t
 
 (**
    [Tdigest.info td] returns a record with these fields:
@@ -76,21 +76,21 @@ val create: ?delta:delta -> ?k:k -> ?cx:cx -> unit -> t
 
    [auto_cumulates_count]: number of compression operations over the life of this Tdigest instance that were not triggered by a manual call to [Tdigest.compress].
 *)
-val info: t -> info
+val info : t -> info
 
 (**
    [Tdigest.add ?n ~data td]
 
    Incorporate a value ([data]) having count [n] (default: [1]) into a new Tdigest.
 *)
-val add: ?n:int -> data:float -> t -> t
+val add : ?n:int -> data:float -> t -> t
 
 (**
    [Tdigest.add_list ?n ll td]
 
    Incorporate a list of values each having count [n] (default: [1]) into a new Tdigest.
 *)
-val add_list: ?n:int -> float list -> t -> t
+val add_list : ?n:int -> float list -> t -> t
 
 (**
    [Tdigest.p_rank td q]
@@ -98,14 +98,14 @@ val add_list: ?n:int -> float list -> t -> t
 
    Returns a new Tdigest to reuse intermediate computations.
 *)
-val p_rank: t -> float -> t * float option
+val p_rank : t -> float -> t * float option
 
 (**
    Same as [Tdigest.p_rank] but for a list of values.
 
    Returns a new Tdigest to reuse intermediate computations.
 *)
-val p_ranks: t -> float list -> t * float option list
+val p_ranks : t -> float list -> t * float option list
 
 (**
    [Tdigest.percentile td p]
@@ -119,14 +119,14 @@ val p_ranks: t -> float list -> t * float option list
 
    Returns a new Tdigest to reuse intermediate computations.
 *)
-val percentile: t -> float -> t * float option
+val percentile : t -> float -> t * float option
 
 (**
    Same as [Tdigest.percentile] but for a list of values.
 
    Returns a new Tdigest to reuse intermediate computations.
 *)
-val percentiles: t -> float list -> t * float option list
+val percentiles : t -> float list -> t * float option list
 
 (**
    [Tdigest.compress ?delta td]
@@ -135,7 +135,7 @@ val percentiles: t -> float list -> t * float option list
 
    [delta] (default: initial value passed to [Tdigest.create]) The compression level to use for this operation only. This does not alter the [delta] used by the Tdigest going forward.
 *)
-val compress: ?delta:delta -> t -> t
+val compress : ?delta:delta -> t -> t
 
 (**
    [Tdigest.to_string td]
@@ -146,7 +146,7 @@ val compress: ?delta:delta -> t -> t
 
    Returns a new Tdigest to reuse intermediate computations.
 *)
-val to_string: t -> t * string
+val to_string : t -> t * string
 
 (**
    [Tdigest.of_string ?delta ?k ?cx str]
@@ -155,23 +155,18 @@ val to_string: t -> t * string
 
    Allocate a new Tdigest from a string or concatenation of strings originally created by [Tdigest.to_string].
 *)
-val of_string: ?delta:delta -> ?k:k -> ?cx:cx -> string -> t
+val of_string : ?delta:delta -> ?k:k -> ?cx:cx -> string -> t
 
 (** For internal use *)
 module Testing : sig
   (** For internal use *)
-  val to_yojson:
+  val to_yojson :
     t ->
-    [> `Assoc of
-        (string *
-            [> `List of
-                [> `Assoc of (string * [> `Float of float ]) list ]
-                  list ])
-          list ]
+    [> `Assoc of (string * [> `List of [> `Assoc of (string * [> `Float of float ]) list ] list ]) list ]
 
   (** For internal use *)
-  val min: t -> (float * float) option
+  val min : t -> (float * float) option
 
   (** For internal use *)
-  val max: t -> (float * float) option
+  val max : t -> (float * float) option
 end
