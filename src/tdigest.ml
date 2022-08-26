@@ -33,6 +33,8 @@ type centroid = {
   n: float;
 }
 
+let empty_centroid = { mean = 0.0; n = 0.0; cumn = 0.0; mean_cumn = 0.0 }
+
 type stats = {
   cumulates_count: int;
   compress_count: int;
@@ -67,7 +69,7 @@ type bounds =
 
 let get_min = function
 | { min = Some _ as x; _ } -> x
-| { min = None; centroids; _ } when Map.is_empty centroids -> None
+| { min = None; n = 0.0; _ } -> None
 | { min = None; _ } as td ->
   let min = Map.min_elt td.centroids >>| snd in
   td.min <- min;
@@ -75,7 +77,7 @@ let get_min = function
 
 let get_max = function
 | { max = Some _ as x; _ } -> x
-| { max = None; centroids; _ } when Map.is_empty centroids -> None
+| { max = None; n = 0.0; _ } -> None
 | { max = None; _ } as td ->
   let max = Map.max_elt td.centroids >>| snd in
   td.max <- max;
@@ -86,7 +88,7 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     match k with
     | Manual -> k
     | Automatic x when is_positive x -> k
-    | Automatic 0. ->
+    | Automatic 0.0 ->
       failwith
         "TDigest k parameter cannot be zero, set to Tdigest.Manual to disable automatic compression."
     | Automatic x -> failwithf "TDigest k parameter must be positive, but was %f" x ()
@@ -95,7 +97,7 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     match cx with
     | Always -> cx
     | Growth x when is_positive x -> cx
-    | Growth 0. ->
+    | Growth 0.0 ->
       failwith
         "TDigest cx parameter cannot be zero, set to Tdigest.Always to disable caching of cumulative \
          totals."
@@ -106,8 +108,8 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     centroids = Map.empty;
     min = None;
     max = None;
-    n = 0.;
-    last_cumulate = 0.;
+    n = 0.0;
+    last_cumulate = 0.0;
     stats = { cumulates_count = 0; compress_count = 0; auto_compress_count = 0 };
   }
 
@@ -145,7 +147,7 @@ let cumulate td ~exact =
   if td.n = td.last_cumulate || ((not exact) && use_cache td)
   then td
   else (
-    let cumn = ref 0. in
+    let cumn = ref 0.0 in
     let centroids =
       Map.map td.centroids ~f:(fun data ->
           let updated = { data with mean_cumn = !cumn + (data.n / 2.); cumn = !cumn + data.n } in
@@ -162,10 +164,17 @@ let cumulate td ~exact =
       stats = { td.stats with cumulates_count = succ td.stats.cumulates_count };
     })
 
+let new_bounds ({ mean; _ } as added) = function
+| { n = 0.0; min = None; max = None; _ } -> Some added, Some added
+| { min = Some existing; max; _ } when mean < existing.mean -> Some added, max
+| { min; max = Some existing; _ } when mean > existing.mean -> min, Some added
+| { min; max; _ } -> min, max
+
 let new_centroid td ~mean ~n ~cumn =
   let data = { mean; cumn; n; mean_cumn = n / 2. } in
-  let centroids = Map.add_exn td.centroids ~key:data.mean ~data in
-  { td with centroids; min = None; max = None; n = td.n + n }
+  let centroids = Map.add_exn td.centroids ~key:mean ~data in
+  let min, max = new_bounds data td in
+  { td with centroids; min; max; n = td.n + n }
 
 let add_weight td nearest ~mean ~n =
   let updated =
@@ -203,9 +212,10 @@ let internal_digest td ~n ~mean =
   cumulate td ~exact:false
 
 let shuffled_array = function
+(* n is out of sync, must check centroids *)
 | { centroids; _ } when Map.is_empty centroids -> [||]
 | { centroids; _ } ->
-  let arr = Array.create ~len:(Map.length centroids) { mean = 0.; n = 0.; cumn = 0.; mean_cumn = 0. } in
+  let arr = Array.create ~len:(Map.length centroids) empty_centroid in
   let _i =
     Map.fold centroids ~init:0 ~f:(fun ~key:_ ~data i ->
         Array.set arr i data;
@@ -228,8 +238,8 @@ let rebuild td ~auto =
       centroids = Map.empty;
       min = None;
       max = None;
-      n = 0.;
-      last_cumulate = 0.;
+      n = 0.0;
+      last_cumulate = 0.0;
       stats =
         {
           td.stats with
@@ -309,7 +319,7 @@ let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
           let n = Int64.(pn lor shift_left x 56 |> float_of_bits) in
           let acc =
             Map.update acc mean ~f:(function
-              | None -> { mean; n; cumn = 0.; mean_cumn = 0. }
+              | None -> { empty_centroid with mean; n }
               | Some c -> { c with n = c.n + n })
           in
           0, 0L, 0L, acc
@@ -337,9 +347,9 @@ let bounds td needle lens =
     | None -> Neither)
 
 let percentile td p =
-  if Map.is_empty td.centroids
-  then td, None
-  else (
+  match td with
+  | { n = 0.0; _ } -> td, None
+  | td -> (
     let td = cumulate td ~exact:true in
     let h = td.n * p in
     match bounds td h (fun { mean_cumn; _ } -> mean_cumn), td.settings.delta with
