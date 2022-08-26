@@ -1,5 +1,6 @@
 open! Core_kernel
 open Float
+open Option.Monad_infix
 
 type delta =
   | Merging  of float
@@ -12,6 +13,12 @@ type k =
 type cx =
   | Always
   | Growth of float
+
+let default_delta = Merging 0.01
+
+let default_k = Automatic 25.0
+
+let default_cx = Growth 1.1
 
 type settings = {
   delta: delta;
@@ -62,7 +69,7 @@ let get_min = function
 | { min = Some _ as x; _ } -> x
 | { min = None; centroids; _ } when Map.is_empty centroids -> None
 | { min = None; _ } as td ->
-  let min = Map.min_elt td.centroids |> Option.map ~f:snd in
+  let min = Map.min_elt td.centroids >>| snd in
   td.min <- min;
   min
 
@@ -70,11 +77,11 @@ let get_max = function
 | { max = Some _ as x; _ } -> x
 | { max = None; centroids; _ } when Map.is_empty centroids -> None
 | { max = None; _ } as td ->
-  let max = Map.max_elt td.centroids |> Option.map ~f:snd in
+  let max = Map.max_elt td.centroids >>| snd in
   td.max <- max;
   max
 
-let create ?(delta = Merging 0.01) ?(k = Automatic 25.) ?(cx = Growth 1.1) () =
+let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
   let k =
     match k with
     | Manual -> k
@@ -195,26 +202,23 @@ let internal_digest td ~n ~mean =
   in
   cumulate td ~exact:false
 
-let shuffled_array td =
-  if Map.is_empty td.centroids
-  then [||]
-  else (
-    let arr =
-      Array.create ~len:(Map.length td.centroids) { mean = 0.; n = 0.; cumn = 0.; mean_cumn = 0. }
-    in
-    let _i =
-      Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data i ->
-          Array.set arr i data;
-          succ i)
-    in
-    let _i =
-      Array.fold_right arr ~init:(Array.length arr) ~f:(fun _x i ->
-          let random = Random.float (of_int i) |> to_int in
-          let current = pred i in
-          Array.swap arr random current;
-          current)
-    in
-    arr)
+let shuffled_array = function
+| { centroids; _ } when Map.is_empty centroids -> [||]
+| { centroids; _ } ->
+  let arr = Array.create ~len:(Map.length centroids) { mean = 0.; n = 0.; cumn = 0.; mean_cumn = 0. } in
+  let _i =
+    Map.fold centroids ~init:0 ~f:(fun ~key:_ ~data i ->
+        Array.set arr i data;
+        succ i)
+  in
+  let _i =
+    Array.fold_right arr ~init:(Array.length arr) ~f:(fun _x i ->
+        let random = Random.float (of_int i) |> to_int in
+        let current = pred i in
+        Array.swap arr random current;
+        current)
+  in
+  arr
 
 let rebuild td ~auto =
   let arr = shuffled_array td in
@@ -264,7 +268,7 @@ let to_string td =
       | 8 -> ()
       | i ->
         Buffer.add_char buf Int64.(255L land shift_right v Int.(i * 8) |> to_int_exn |> Char.of_int_exn);
-        loop (succ i)
+        (loop [@tailcall]) (succ i)
     in
     loop 0
   in
@@ -273,7 +277,7 @@ let to_string td =
       add_float n);
   td, Buffer.contents buf
 
-let of_string ?(delta = Merging 0.01) ?(k = Automatic 25.) ?(cx = Growth 1.1) str =
+let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
   if Int.(String.length str % 16 <> 0)
   then raise (Invalid_argument "Invalid string length for Tdigest.of_string");
   let td = create ~delta ~k ~cx () in
@@ -392,7 +396,7 @@ module Testing = struct
     in
     `Assoc [ "centroids", `List ll ]
 
-  let min td = Option.map (get_min td) ~f:(fun { mean; n; _ } -> mean, n)
+  let min td = get_min td >>| fun { mean; n; _ } -> mean, n
 
-  let max td = Option.map (get_max td) ~f:(fun { mean; n; _ } -> mean, n)
+  let max td = get_max td >>| fun { mean; n; _ } -> mean, n
 end
