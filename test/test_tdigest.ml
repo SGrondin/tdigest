@@ -74,9 +74,9 @@ let () =
               let size = (Tdigest.info td).size in
               if size >= 100 then failwithf "Compressed size: %d >= 100" size ();
 
-              Json_diff.assert_equal (Tdigest.Testing.min td |> pair_to_yojson) (b 0. 1 |> basic_to_yojson);
+              Json_diff.assert_equal (Tdigest.Private.min td |> pair_to_yojson) (b 0. 1 |> basic_to_yojson);
               Json_diff.assert_equal
-                (Tdigest.Testing.max td |> pair_to_yojson)
+                (Tdigest.Private.max td |> pair_to_yojson)
                 (b 990. 1 |> basic_to_yojson) );
           ( "K automatically compresses during ingest",
             `Quick,
@@ -89,9 +89,9 @@ let () =
               let size = (Tdigest.info td).size in
               if size >= 10_000 then failwithf "Size: %d >= 10,000" size ();
 
-              Json_diff.assert_equal (Tdigest.Testing.min td |> pair_to_yojson) (b 0. 1 |> basic_to_yojson);
+              Json_diff.assert_equal (Tdigest.Private.min td |> pair_to_yojson) (b 0. 1 |> basic_to_yojson);
               Json_diff.assert_equal
-                (Tdigest.Testing.max td |> pair_to_yojson)
+                (Tdigest.Private.max td |> pair_to_yojson)
                 (b 99_990. 1 |> basic_to_yojson) );
         ] );
       ( "percentile ranks",
@@ -231,7 +231,7 @@ let () =
               let td1, export = Tdigest.to_string td in
               if String.length export <> 160 then failwith "export length <> 160";
               let td2 = Tdigest.of_string export in
-              Json_diff.assert_equal (Tdigest.Testing.to_yojson td1) (Tdigest.Testing.to_yojson td2) );
+              Json_diff.assert_equal (Tdigest.Private.to_yojson td1) (Tdigest.Private.to_yojson td2) );
         ] );
       ( "merge",
         [
@@ -248,6 +248,6 @@ let () =
               in
               check_percentiles td1 [ 0.0; 0.25; 0.50; 0.75; 1.0 ] [ 1.0; 3.0; 3.75; 6.75; 9.0 ];
               check_percentiles td2 [ 0.0; 0.25; 0.50; 0.75; 1.0 ] [ 1.0; 3.0; 3.75; 6.75; 9.0 ];
-              Json_diff.assert_equal (Tdigest.Testing.to_yojson td1) (Tdigest.Testing.to_yojson td2) );
+              Json_diff.assert_equal (Tdigest.Private.to_yojson td1) (Tdigest.Private.to_yojson td2) );
         ] );
     ]

@@ -265,7 +265,7 @@ let rebuild ~auto settings (stats : stats) arr =
   let td = Array.fold arr ~init:blank ~f:(fun acc { mean; n; _ } -> internal_digest acc ~n ~mean) in
   cumulate td ~exact:true
 
-let digest td ?(n = 1) ~mean =
+let digest ?(n = 1) td ~mean =
   let td = internal_digest td ~n:(Int.to_float n) ~mean in
   match td.settings with
   | { delta = Merging delta; k = Automatic k; _ } when Map.length td.centroids |> of_int > k / delta ->
@@ -417,7 +417,7 @@ let p_rank td p =
 
 let p_ranks td ps = List.fold_map ps ~init:td ~f:p_rank
 
-module Testing = struct
+module Private = struct
   let to_yojson td =
     let ll =
       Map.fold_right td.centroids ~init:[] ~f:(fun ~key:_ ~data acc ->

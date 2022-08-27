@@ -165,7 +165,7 @@ val to_string : t -> t * string
 val of_string : ?delta:delta -> ?k:k -> ?cx:cx -> string -> t
 
 (** For internal use *)
-module Testing : sig
+module Private : sig
   (** For internal use *)
   val to_yojson :
     t ->

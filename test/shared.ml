@@ -37,6 +37,6 @@ let check_p_ranks = check_fn ~fn:Tdigest.p_ranks
 let check_percentiles = check_fn ~fn:Tdigest.percentiles
 
 let check td vs =
-  let json : Yojson.Safe.t = Tdigest.Testing.to_yojson td in
+  let json : Yojson.Safe.t = Tdigest.Private.to_yojson td in
   let against = `Assoc [ "centroids", `List (List.map vs ~f:basic_to_yojson) ] in
   Json_diff.assert_equal json against
