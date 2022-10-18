@@ -1,4 +1,4 @@
-open! Core_kernel
+open! Core
 
 type mismatch =
   | Changed of (Yojson.Safe.t * Yojson.Safe.t)
