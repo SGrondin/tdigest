@@ -43,9 +43,7 @@ let assert_equal left right =
       | `Both (x, y) ->
         sprintf "%s: %s %s %s"
           (color (sprintf "+/- %s" key) `Yellow)
-          (stringify x)
-          (color "!=" `Yellow)
-          (stringify y)
+          (stringify x) (color "!=" `Yellow) (stringify y)
         |> mismatch)
   in
   match Queue.length errors with

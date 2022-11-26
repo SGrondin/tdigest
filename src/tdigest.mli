@@ -1,4 +1,4 @@
-open! Core_kernel
+open! Core
 
 (**
    [delta] is the compression factor, the max fraction of mass that can be owned by one centroid (bigger, up to 1.0, means more compression).

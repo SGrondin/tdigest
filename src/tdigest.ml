@@ -1,4 +1,4 @@
-open! Core_kernel
+open! Core
 open Float
 open Option.Monad_infix
 

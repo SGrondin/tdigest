@@ -3,7 +3,7 @@
   (libraries
     tdigest
 
-    core_kernel
+    core
     yojson
   )
 

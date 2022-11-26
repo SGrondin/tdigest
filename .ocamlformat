@@ -1,5 +1,5 @@
-# "Asemio Style" v1.1
-# Last updated for ocamlformat 0.19.0
+# "Asemio Style" v1.2
+# Last updated for ocamlformat 0.21.0
 
 # All available options are listed.
 # An option is commented out when the value matches the default
@@ -8,52 +8,36 @@
 # - try out new values for existing options
 # - if a default changed, see if we should follow it or not
 
-# align-cases = false
-align-constructors-decl = true
-align-variants-decl = true
 # assignment-operator = end-line
-# break-before-in = fit-or-vertical
 break-cases = all
-# break-collection-expressions = fit-or-vertical
 # break-fun-decl = wrap
 # break-fun-sig = wrap
 break-infix = fit-or-vertical
 # break-infix-before-func = false
 # break-separators = after
 # break-sequences = true
-# break-string-literals = auto
-# break-struct = force
 cases-exp-indent = 2
 # cases-matching-exp-indent = normal
-disambiguate-non-breaking-match = true
 doc-comments = before
 # doc-comments-padding = 2
 # doc-comments-tag-only = default
 # dock-collection-brackets = true
 exp-grouping = preserve
-# extension-indent = 2
 field-space = tight-decl
-function-indent = 0
-# function-indent-nested = never
 if-then-else = keyword-first
-# indent-after-in = 0
 # indicate-multiline-delimiters = no
 indicate-nested-or-patterns = space
 # infix-precedence = indent
 # leading-nested-match-parens = false
 let-and = sparse
-# let-binding-indent = 2
 # let-binding-spacing = compact
 # let-module = compact
+line-endings = lf
 margin = 106
-# match-indent = 0
-# match-indent-nested = never
 max-indent = 3
-# module-item-spacing = sparse
-# nested-match = wrap
+module-item-spacing = sparse
 parens-ite = true
 parens-tuple = multi-line-only
-# parens-tuple-patterns = multi-line-only
 # parse-docstrings = false
 # sequence-blank-line = preserve-one
 # sequence-style = terminator
@@ -62,8 +46,29 @@ single-case = sparse
 # space-around-lists = true
 # space-around-records = true
 # space-around-variants = true
-# stritem-extension-indent = 0
 type-decl = sparse
-# type-decl-indent = 2
 # wrap-comments = false
 # wrap-fun-args = true
+
+
+# DEPRECATED
+
+# align-cases = false
+align-constructors-decl = true
+align-variants-decl = true
+# break-before-in = fit-or-vertical
+# break-collection-expressions = fit-or-vertical
+# break-string-literals = auto
+# break-struct = force
+disambiguate-non-breaking-match = true
+# extension-indent = 2
+function-indent = 0
+# function-indent-nested = never
+# indent-after-in = 0
+# let-binding-indent = 2
+# match-indent = 0
+# match-indent-nested = never
+# nested-match = wrap
+# parens-tuple-patterns = multi-line-only
+# stritem-extension-indent = 0
+# type-decl-indent = 2

@@ -1,4 +1,4 @@
-open! Core_kernel
+open! Core
 
 let info_to_string x =
   let open Tdigest in
