@@ -289,21 +289,22 @@ let add ?(n = 1) ~data td = digest td ~n ~mean:data
 let add_list ?(n = 1) xs td = List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
 
 let to_string td =
-  let buf = Buffer.create (Map.length td.centroids |> Int.( * ) 16) in
-  let add_float f =
+  let buf = Bytes.create (Map.length td.centroids |> Int.( * ) 16) in
+  let add_float pos ~data:f =
     let v = Int64.bits_of_float f in
-    let rec loop = function
-      | 8 -> ()
+    let rec loop pos = function
+      | 8 -> pos
       | i ->
-        Buffer.add_char buf Int64.(255L land shift_right v Int.(i * 8) |> to_int_exn |> Char.of_int_exn);
-        (loop [@tailcall]) (succ i)
+        Bytes.set buf pos Int64.(255L land shift_right v Int.(i * 8) |> to_int_exn |> Char.of_int_exn);
+        (loop [@tailcall]) (succ pos) (succ i)
     in
-    loop 0
+    loop pos 0
   in
-  Map.iter td.centroids ~f:(fun { mean; n; _ } ->
-      add_float mean;
-      add_float n);
-  td, Buffer.contents buf
+  let _pos =
+    Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data:{ mean; n; _ } pos ->
+        add_float pos ~data:mean |> add_float ~data:n)
+  in
+  td, Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf
 
 let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
   if Int.(String.length str % 16 <> 0) then invalid_arg "Invalid string length for Tdigest.of_string";
