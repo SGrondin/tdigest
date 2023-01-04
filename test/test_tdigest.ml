@@ -250,4 +250,15 @@ let () =
               check_percentiles td2 [ 0.0; 0.25; 0.50; 0.75; 1.0 ] [ 1.0; 3.0; 3.75; 6.75; 9.0 ];
               Json_diff.assert_equal (Tdigest.Private.to_yojson td1) (Tdigest.Private.to_yojson td2) );
         ] );
+      ( "is_empty",
+        [
+          ( "reports empty instances",
+            `Quick,
+            fun () ->
+              let xs = [ 3.0; 4.0; 3.5; 7.0 ] in
+              let td = Tdigest.create () in
+              if not (Tdigest.is_empty td) then failwith "not empty";
+              let td = Tdigest.add_list xs td in
+              if Tdigest.is_empty td then failwith "empty" );
+        ] );
     ]

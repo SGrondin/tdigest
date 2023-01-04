@@ -64,6 +64,11 @@ type info = {
 val create : ?delta:delta -> ?k:k -> ?cx:cx -> unit -> t
 
 (**
+   [Tdigest.is_empty td] returns [true] when the T-Digest does not contain any values.
+*)
+val is_empty : t -> bool
+
+(**
    [Tdigest.info td] returns a record with these fields:
 
    [count]: sum of all [n]

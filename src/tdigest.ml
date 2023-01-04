@@ -91,19 +91,19 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     | Manual -> k
     | Automatic x when is_positive x -> k
     | Automatic 0.0 ->
-      failwith
+      invalid_arg
         "TDigest k parameter cannot be zero, set to Tdigest.Manual to disable automatic compression."
-    | Automatic x -> failwithf "TDigest k parameter must be positive, but was %f" x ()
+    | Automatic x -> invalid_argf "TDigest k parameter must be positive, but was %f" x ()
   in
   let cx =
     match cx with
     | Always -> cx
     | Growth x when is_positive x -> cx
     | Growth 0.0 ->
-      failwith
+      invalid_arg
         "TDigest cx parameter cannot be zero, set to Tdigest.Always to disable caching of cumulative \
          totals."
-    | Growth x -> failwithf "TDigest cx parameter must be positive, but was %f" x ()
+    | Growth x -> invalid_argf "TDigest cx parameter must be positive, but was %f" x ()
   in
   {
     settings = { delta; k; cx };
@@ -114,6 +114,10 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     last_cumulate = 0.0;
     stats = empty_stats;
   }
+
+let is_empty = function
+| { n = 0.0; _ } -> true
+| _ -> false
 
 let info { centroids; n; stats; _ } =
   {
@@ -302,8 +306,7 @@ let to_string td =
   td, Buffer.contents buf
 
 let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
-  if Int.(String.length str % 16 <> 0)
-  then raise (Invalid_argument "Invalid string length for Tdigest.of_string");
+  if Int.(String.length str % 16 <> 0) then invalid_arg "Invalid string length for Tdigest.of_string";
   let settings = { delta; k; cx } in
   let _i, _mean, _n, map =
     String.fold str ~init:(0, 0L, 0L, Map.empty) ~f:(fun (i, pmean, pn, acc) c ->
