@@ -115,9 +115,7 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     stats = empty_stats;
   }
 
-let is_empty = function
-| { n = 0.0; _ } -> true
-| _ -> false
+let is_empty { centroids; _ } = Map.is_empty centroids
 
 let info { centroids; n; stats; _ } =
   {
