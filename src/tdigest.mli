@@ -7,6 +7,7 @@ open! Core
 type delta =
   | Merging  of float
   | Discrete
+[@@deriving sexp]
 
 (**
    [k] is a size threshold that triggers recompression as the TDigest grows during input.
@@ -15,6 +16,7 @@ type delta =
 type k =
   | Manual
   | Automatic of float
+[@@deriving sexp]
 
 (**
    [cx] (default: [1.1]) specifies how often to update cached cumulative totals used for quantile estimation during ingest.
@@ -24,8 +26,9 @@ type k =
 type cx =
   | Always
   | Growth of float
+[@@deriving sexp]
 
-type t
+type t [@@deriving sexp]
 
 (**
    [count]: sum of all [n]
@@ -172,9 +175,7 @@ val of_string : ?delta:delta -> ?k:k -> ?cx:cx -> string -> t
 (** For internal use *)
 module Private : sig
   (** For internal use *)
-  val to_yojson :
-    t ->
-    [> `Assoc of (string * [> `List of [> `Assoc of (string * [> `Float of float ]) list ] list ]) list ]
+  val centroids : t -> (float * float) list
 
   (** For internal use *)
   val min : t -> (float * float) option

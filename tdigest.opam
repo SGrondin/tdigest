@@ -25,8 +25,5 @@ depends: [
   "core" { >= "v0.15.0" }
   # "ocamlformat" { = "0.21.0" } # Development
   # "ocaml-lsp-server" # Development
-
-  "alcotest" { with-test }
-  "yojson" { with-test }
 ]
 build: ["dune" "build" "-p" name "-j" jobs]

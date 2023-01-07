@@ -5,14 +5,17 @@ open Option.Monad_infix
 type delta =
   | Merging  of float
   | Discrete
+[@@deriving sexp]
 
 type k =
   | Manual
   | Automatic of float
+[@@deriving sexp]
 
 type cx =
   | Always
   | Growth of float
+[@@deriving sexp]
 
 let default_delta = Merging 0.01
 
@@ -25,6 +28,7 @@ type settings = {
   k: k;
   cx: cx;
 }
+[@@deriving sexp]
 
 type centroid = {
   mean: float;
@@ -32,6 +36,7 @@ type centroid = {
   mean_cumn: float;
   n: float;
 }
+[@@deriving sexp]
 
 let empty_centroid = { mean = 0.0; n = 0.0; cumn = 0.0; mean_cumn = 0.0 }
 
@@ -40,6 +45,7 @@ type stats = {
   compress_count: int;
   auto_compress_count: int;
 }
+[@@deriving sexp]
 
 let empty_stats = { cumulates_count = 0; compress_count = 0; auto_compress_count = 0 }
 
@@ -52,6 +58,7 @@ type t = {
   last_cumulate: float;
   stats: stats;
 }
+[@@deriving sexp]
 
 type info = {
   count: int;
@@ -420,12 +427,8 @@ let p_rank td p =
 let p_ranks td ps = List.fold_map ps ~init:td ~f:p_rank
 
 module Private = struct
-  let to_yojson td =
-    let ll =
-      Map.fold_right td.centroids ~init:[] ~f:(fun ~key:_ ~data acc ->
-          `Assoc [ "mean", `Float data.mean; "n", `Float data.n ] :: acc)
-    in
-    `Assoc [ "centroids", `List ll ]
+  let centroids td =
+    Map.fold_right td.centroids ~init:[] ~f:(fun ~key:_ ~data:{ mean; n; _ } acc -> (mean, n) :: acc)
 
   let min td = get_min td >>| fun { mean; n; _ } -> mean, n
 

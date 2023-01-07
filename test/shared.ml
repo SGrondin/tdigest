@@ -1,42 +1,35 @@
 open! Core
 
-type basic = {
-  mean: float;
-  n: float;
-}
-[@@deriving fields]
+let render_centroids ll =
+  List.map ll ~f:(fun (mean, n) -> ("mean", mean), ("n", n))
+  |> [%sexp_of: ((string * float) * (string * float)) list]
 
-let b mean n = { mean; n = Int.to_float n }
+let check td = Tdigest.Private.centroids td |> render_centroids |> Sexp.to_string_hum |> print_endline
 
-let basic_to_yojson { mean; n } : Yojson.Safe.t = `Assoc [ "mean", `Float mean; "n", `Float n ]
+let check_size td = (Tdigest.info td).size |> sprintf !"%{sexp: int}" |> print_endline
 
-let pair_to_yojson = function
-| None -> `Null
-| Some (mean, n) -> basic_to_yojson { mean; n }
+let check_min_max td =
+  (Tdigest.Private.min td, Tdigest.Private.max td)
+  |> sprintf !"%{sexp: (float * float) option * (float * float) option}"
+  |> print_endline
 
-let floats_to_yojson ll = `Assoc [ "value", `List (List.map ll ~f:(fun x -> `Float x)) ]
+let check_p_rank p td = Tdigest.p_rank td p |> snd |> sprintf !"%{sexp: float option}" |> print_endline
 
-let float_opts_to_yojson ll =
-  `Assoc
-    [
-      ( "value",
-        `List
-          (List.map ll ~f:(function
-            | Some x -> `Float x
-            | None -> `Null)) );
-    ]
+let check_percentile p td =
+  Tdigest.percentile td p |> snd |> sprintf !"%{sexp: float option}" |> print_endline
 
-let check_fn td queries results ~fn =
-  let _td, ranks = fn td queries in
-  let left = float_opts_to_yojson ranks in
-  let right = floats_to_yojson results in
-  Json_diff.assert_equal left right
+let check_p_ranks ps td =
+  Tdigest.p_ranks td ps |> snd |> sprintf !"%{sexp: float option list}" |> print_endline
 
-let check_p_ranks = check_fn ~fn:Tdigest.p_ranks
+let check_percentiles ps td =
+  Tdigest.percentiles td ps |> snd |> sprintf !"%{sexp: float option list}" |> print_endline
 
-let check_percentiles = check_fn ~fn:Tdigest.percentiles
+let identical_sexp ~received ~expected =
+  if not (Sexp.equal received expected)
+  then print_endline (sprintf !"Not identical.\nReceived: %{Sexp}\nExpected: %{Sexp}" received expected)
+  else print_endline "Identical"
 
-let check td vs =
-  let json : Yojson.Safe.t = Tdigest.Private.to_yojson td in
-  let against = `Assoc [ "centroids", `List (List.map vs ~f:basic_to_yojson) ] in
-  Json_diff.assert_equal json against
+let expected_centroids td =
+  let received = Tdigest.Private.centroids td |> render_centroids in
+  let expected = List.init 100 ~f:(fun i -> i * 10 |> Int.to_float, 1.) |> render_centroids in
+  identical_sexp ~received ~expected
