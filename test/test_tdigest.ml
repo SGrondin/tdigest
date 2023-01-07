@@ -61,7 +61,7 @@ let%expect_test "compress" =
     check_min_max td;
     [%expect {|
       100
-      46
+      45
       (((0 1)) ((990 1))) |}]
   in
 
@@ -75,7 +75,7 @@ let%expect_test "compress" =
     check_size td;
     check_min_max td;
     [%expect {|
-      2128
+      2156
       (((0 1)) ((99990 1))) |}]
   in
   ()
@@ -151,7 +151,7 @@ let%expect_test "percentile ranks" =
     in
     Float.to_string max_err |> print_endline;
     (* must be < 0.01 *)
-    [%expect {| 0.0020868899459022261 |}]
+    [%expect {| 0.0020962038264262794 |}]
   in
 
   (* from an exact match *)
@@ -207,7 +207,7 @@ let%expect_test "percentiles" =
     in
     Float.to_string max_err |> print_endline;
     (* must be < 0.01 *)
-    [%expect {| 0.0020868899459022261 |}]
+    [%expect {| 0.0020962038264262794 |}]
   in
   ()
 

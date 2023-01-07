@@ -27,6 +27,7 @@ type settings = {
   delta: delta;
   k: k;
   cx: cx;
+  k_delta: float option;
 }
 [@@deriving sexp]
 
@@ -69,13 +70,6 @@ type info = {
 }
 [@@deriving sexp]
 
-type bounds =
-  | Neither
-  | Both    of centroid * centroid
-  | Equal   of centroid
-  | Lower   of centroid
-  | Upper   of centroid
-
 let get_min = function
 | { min = Some _ as x; _ } -> x
 | { min = None; n = 0.0; _ } -> None
@@ -91,6 +85,10 @@ let get_max = function
   let max = Map.max_elt td.centroids >>| snd in
   td.max <- max;
   max
+
+let get_k_delta = function
+| Automatic k, Merging delta -> Some (k / delta)
+| _ -> None
 
 let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
   let k =
@@ -113,7 +111,7 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     | Growth x -> invalid_argf "TDigest cx parameter must be positive, but was %f" x ()
   in
   {
-    settings = { delta; k; cx };
+    settings = { delta; k; cx; k_delta = get_k_delta (k, delta) };
     centroids = Map.empty;
     min = None;
     max = None;
@@ -222,16 +220,6 @@ let internal_digest td ~n ~mean =
   in
   cumulate td ~exact:false
 
-let shuffle_inplace arr =
-  let _i =
-    Array.fold_right arr ~init:(Array.length arr) ~f:(fun _x i ->
-        let random = Random.float (of_int i) |> to_int in
-        let current = pred i in
-        Array.swap arr random current;
-        current)
-  in
-  ()
-
 let weights_of_td = function
 (* n is out of sync, must check centroids *)
 | { centroids; _ } when Map.is_empty centroids -> [||]
@@ -239,22 +227,22 @@ let weights_of_td = function
   let arr = Array.create ~len:(Map.length centroids) empty_centroid in
   let _i =
     Map.fold centroids ~init:0 ~f:(fun ~key:_ ~data i ->
-        Array.set arr i data;
+        arr.(i) <- data;
         succ i)
   in
   arr
 
-let weights_of_map ~len map =
-  let arr = Array.create ~len empty_centroid in
+let weights_of_table table =
+  let arr = Array.create ~len:(Table.length table) empty_centroid in
   let _i =
-    Map.fold map ~init:0 ~f:(fun ~key:mean ~data:n i ->
-        Array.set arr i { empty_centroid with mean; n };
+    Table.fold table ~init:0 ~f:(fun ~key:mean ~data:n i ->
+        arr.(i) <- { empty_centroid with mean; n };
         succ i)
   in
   arr
 
 let rebuild ~auto settings (stats : stats) arr =
-  shuffle_inplace arr;
+  Array.permute arr;
   let blank =
     {
       settings;
@@ -275,11 +263,15 @@ let rebuild ~auto settings (stats : stats) arr =
   cumulate td ~exact:true
 
 let digest ?(n = 1) td ~mean =
-  let td = internal_digest td ~n:(Int.to_float n) ~mean in
+  let td = internal_digest td ~n:(of_int n) ~mean in
   match td.settings with
-  | { delta = Merging delta; k = Automatic k; _ } when Map.length td.centroids |> of_int > k / delta ->
+  | { k_delta = Some kd; _ } when Map.length td.centroids |> of_int > kd ->
     rebuild ~auto:true td.settings td.stats (weights_of_td td)
   | _ -> td
+
+let add ?(n = 1) ~data td = digest td ~n ~mean:data
+
+let add_list ?(n = 1) xs td = List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
 
 let compress ?delta td =
   match delta with
@@ -288,10 +280,6 @@ let compress ?delta td =
     let settings = td.settings in
     let updated = rebuild ~auto:false { td.settings with delta } td.stats (weights_of_td td) in
     { updated with settings }
-
-let add ?(n = 1) ~data td = digest td ~n ~mean:data
-
-let add_list ?(n = 1) xs td = List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
 
 let to_string td =
   let buf = Bytes.create (Map.length td.centroids |> Int.( * ) 16) in
@@ -311,49 +299,48 @@ let to_string td =
   in
   td, Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf
 
+let parse_float str pos =
+  let open Int64 in
+  let next off = String.get str Int.(pos + off) |> Char.to_int |> of_int_exn in
+  (String.get str pos |> Char.to_int |> of_int_exn)
+  lor shift_left (next 1) 8
+  lor shift_left (next 2) 16
+  lor shift_left (next 3) 24
+  lor shift_left (next 4) 32
+  lor shift_left (next 5) 40
+  lor shift_left (next 6) 48
+  lor shift_left (next 7) 56
+  |> float_of_bits
+
 let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
   if Int.(String.length str % 16 <> 0) then invalid_arg "Invalid string length for Tdigest.of_string";
-  let settings = { delta; k; cx } in
-  let _i, _mean, _n, map =
-    String.fold str ~init:(0, 0L, 0L, Map.empty) ~f:(fun (i, pmean, pn, acc) c ->
-        let x = c |> Char.to_int |> Int64.of_int_exn in
-        match i with
-        | 0
-         |1
-         |2
-         |3
-         |4
-         |5
-         |6
-         |7 ->
-          let mean = Int64.(pmean lor shift_left x Int.(i * 8)) in
-          succ i, mean, pn, acc
-        | 8
-         |9
-         |10
-         |11
-         |12
-         |13
-         |14 ->
-          let n = Int64.(pn lor shift_left x Int.((i - 8) * 8)) in
-          succ i, pmean, n, acc
-        | 15 ->
-          let mean = Int64.float_of_bits pmean in
-          let n = Int64.(pn lor shift_left x 56 |> float_of_bits) in
-          let acc = Map.update acc mean ~f:(Option.value_map ~default:n ~f:(( + ) n)) in
-          0, 0L, 0L, acc
-        | x -> failwithf "Tdigest.of_string: impossible case '%d'. Please report this bug." x ())
+  let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
+  let table = Table.create () in
+  let rec loop = function
+    | pos when Int.(pos = String.length str) -> ()
+    | pos ->
+      let mean = parse_float str pos in
+      let n = parse_float str Int.(pos + 8) in
+      Table.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n));
+      (loop [@tailcall]) Int.(pos + 16)
   in
-  weights_of_map ~len:Int.(String.length str / 16) map |> rebuild ~auto:true settings empty_stats
+  loop 0;
+  weights_of_table table |> rebuild ~auto:true settings empty_stats
 
 let merge ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) tds =
-  let settings = { delta; k; cx } in
-  let map =
-    List.fold tds ~init:Map.empty ~f:(fun acc { centroids; _ } ->
-        Map.fold centroids ~init:acc ~f:(fun ~key:_ ~data:{ mean; n; _ } acc ->
-            Map.update acc mean ~f:(Option.value_map ~default:n ~f:(( + ) n))))
-  in
-  weights_of_map ~len:(Map.length map) map |> rebuild ~auto:true settings empty_stats
+  let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
+  let table = Table.create () in
+  List.iter tds ~f:(fun { centroids; _ } ->
+      Map.iter centroids ~f:(fun { mean; n; _ } ->
+          Table.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n))));
+  weights_of_table table |> rebuild ~auto:true settings empty_stats
+
+type bounds =
+  | Neither
+  | Both    of centroid * centroid
+  | Equal   of centroid
+  | Lower   of centroid
+  | Upper   of centroid
 
 let bounds td needle lens =
   let gt = ref None in
