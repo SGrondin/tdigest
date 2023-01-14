@@ -48,6 +48,7 @@ type info = {
   compress_count: int;
   auto_compress_count: int;
 }
+[@@deriving sexp]
 
 (**
    [Tdigest.create ?delta ?k ?cx ()]

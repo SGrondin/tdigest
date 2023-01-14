@@ -212,16 +212,17 @@ let%expect_test "percentiles" =
   ()
 
 let%expect_test "serialization" =
-  (* identical after recreating *)
-  let xs = List.init 10 ~f:(fun _i -> Random.float 1.) in
-  let td = Tdigest.create () |> Tdigest.add_list xs in
-  let td1, export = Tdigest.to_string td in
-  if String.length export <> 160 then failwith "export length <> 160";
-  let td2 = Tdigest.of_string export in
-  check td1;
-  check td2;
-  [%expect
-    {|
+  (* identical after recreating (to_string/of_string) *)
+  let () =
+    let xs = List.init 10 ~f:(fun _i -> Random.float 1.) in
+    let td = Tdigest.create () |> Tdigest.add_list xs in
+    let td1, export = Tdigest.to_string td in
+    if String.length export <> 160 then failwith "export length <> 160";
+    let td2 = Tdigest.of_string export in
+    check td1;
+    check td2;
+    [%expect
+      {|
     (((mean 0.11359872617230203) (n 1)) ((mean 0.14207889800896825) (n 1))
      ((mean 0.26565242651667725) (n 1)) ((mean 0.32088115017788221) (n 1))
      ((mean 0.41519876713081461) (n 1)) ((mean 0.43630556398799153) (n 1))
@@ -232,6 +233,39 @@ let%expect_test "serialization" =
      ((mean 0.41519876713081461) (n 1)) ((mean 0.43630556398799153) (n 1))
      ((mean 0.45062527388924589) (n 1)) ((mean 0.56883568253605243) (n 1))
      ((mean 0.64030838064885942) (n 1)) ((mean 0.96035328719918678) (n 1))) |}]
+  in
+
+  (* identical after recreating (sexp) *)
+  let () =
+    let xs = List.init 10 ~f:(fun _i -> Random.float 1.) in
+    let td1 = Tdigest.create () |> Tdigest.add_list xs in
+    let td2 = [%sexp_of: Tdigest.t] td1 |> [%of_sexp: Tdigest.t] in
+    print_endline (sprintf !"%{sexp#hum: Tdigest.t}" td1);
+    print_endline (sprintf !"%{sexp#hum: Tdigest.t}" td2);
+    check td1;
+    check td2;
+    [%expect
+      {|
+      ((settings ((delta (Merging 0.01)) (k (Automatic 25)) (cx (Growth 1.1))))
+       (state
+        "y\142\169\223\026\255\208?\000\000\000\000\000\000\240?\181\251T\028\003\017\220?\000\000\000\000\000\000\240?L\193\172/_\213\220?\000\000\000\000\000\000\240?>\t[\140\144\246\220?\000\000\000\000\000\000\240?\016<\007\197.-\224?\000\000\000\000\000\000\240?\160T2\154\179\029\226?\000\000\000\000\000\000\240?\152\193,U\239m\226?\000\000\000\000\000\000\240?E\138\192\255\\)\236?\000\000\000\000\000\000\240?\243\210YPe\217\236?\000\000\000\000\000\000\240?\"\025\132\145\202n\238?\000\000\000\000\000\000\240?")
+       (stats ((cumulates_count 10) (compress_count 0) (auto_compress_count 0))))
+      ((settings ((delta (Merging 0.01)) (k (Automatic 25)) (cx (Growth 1.1))))
+       (state
+        "y\142\169\223\026\255\208?\000\000\000\000\000\000\240?\181\251T\028\003\017\220?\000\000\000\000\000\000\240?L\193\172/_\213\220?\000\000\000\000\000\000\240?>\t[\140\144\246\220?\000\000\000\000\000\000\240?\016<\007\197.-\224?\000\000\000\000\000\000\240?\160T2\154\179\029\226?\000\000\000\000\000\000\240?\152\193,U\239m\226?\000\000\000\000\000\000\240?E\138\192\255\\)\236?\000\000\000\000\000\000\240?\243\210YPe\217\236?\000\000\000\000\000\000\240?\"\025\132\145\202n\238?\000\000\000\000\000\000\240?")
+       (stats ((cumulates_count 10) (compress_count 0) (auto_compress_count 0))))
+      (((mean 0.26557037202858386) (n 1)) ((mean 0.43853833929818659) (n 1))
+       ((mean 0.45052318244690492) (n 1)) ((mean 0.45254911142923848) (n 1))
+       ((mean 0.50551546556551052) (n 1)) ((mean 0.56612568012737441) (n 1))
+       ((mean 0.57591978679379263) (n 1)) ((mean 0.88004922820648146) (n 1))
+       ((mean 0.90153756803064622) (n 1)) ((mean 0.95102432652564439) (n 1)))
+      (((mean 0.26557037202858386) (n 1)) ((mean 0.43853833929818659) (n 1))
+       ((mean 0.45052318244690492) (n 1)) ((mean 0.45254911142923848) (n 1))
+       ((mean 0.50551546556551052) (n 1)) ((mean 0.56612568012737441) (n 1))
+       ((mean 0.57591978679379263) (n 1)) ((mean 0.88004922820648146) (n 1))
+       ((mean 0.90153756803064622) (n 1)) ((mean 0.95102432652564439) (n 1))) |}]
+  in
+  ()
 
 let%expect_test "merge" =
   (* incorporates all points *)

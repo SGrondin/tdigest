@@ -29,7 +29,6 @@ type settings = {
   cx: cx;
   k_delta: float option;
 }
-[@@deriving sexp]
 
 type centroid = {
   mean: float;
@@ -37,7 +36,6 @@ type centroid = {
   mean_cumn: float;
   n: float;
 }
-[@@deriving sexp]
 
 let empty_centroid = { mean = 0.0; n = 0.0; cumn = 0.0; mean_cumn = 0.0 }
 
@@ -59,7 +57,6 @@ type t = {
   last_cumulate: float;
   stats: stats;
 }
-[@@deriving sexp]
 
 type info = {
   count: int;
@@ -97,7 +94,8 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     | Automatic x when is_positive x -> k
     | Automatic 0.0 ->
       invalid_arg
-        "TDigest k parameter cannot be zero, set to Tdigest.Manual to disable automatic compression."
+        "TDigest.create: k parameter cannot be zero, set to Tdigest.Manual to disable automatic \
+         compression."
     | Automatic x -> invalid_argf "TDigest k parameter must be positive, but was %f" x ()
   in
   let cx =
@@ -106,9 +104,9 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     | Growth x when is_positive x -> cx
     | Growth 0.0 ->
       invalid_arg
-        "TDigest cx parameter cannot be zero, set to Tdigest.Always to disable caching of cumulative \
-         totals."
-    | Growth x -> invalid_argf "TDigest cx parameter must be positive, but was %f" x ()
+        "TDigest.create: cx parameter cannot be zero, set to Tdigest.Always to disable caching of \
+         cumulative totals."
+    | Growth x -> invalid_argf "TDigest.create: cx parameter must be positive, but was %f" x ()
   in
   {
     settings = { delta; k; cx; k_delta = get_k_delta (k, delta) };
@@ -269,9 +267,13 @@ let digest ?(n = 1) td ~mean =
     rebuild ~auto:true td.settings td.stats (weights_of_td td)
   | _ -> td
 
-let add ?(n = 1) ~data td = digest td ~n ~mean:data
+let add ?(n = 1) ~data td =
+  if Int.(n <= 0) then invalid_arg "Tdigest.add: n <= 0";
+  digest td ~n ~mean:data
 
-let add_list ?(n = 1) xs td = List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
+let add_list ?(n = 1) xs td =
+  if Int.(n <= 0) then invalid_arg "Tdigest.add_list: n <= 0";
+  List.fold xs ~init:td ~f:(fun acc mean -> digest acc ~n ~mean)
 
 let compress ?delta td =
   match delta with
@@ -313,7 +315,7 @@ let parse_float str pos =
   |> float_of_bits
 
 let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
-  if Int.(String.length str % 16 <> 0) then invalid_arg "Invalid string length for Tdigest.of_string";
+  if Int.(String.length str % 16 <> 0) then invalid_arg "Tdigest.of_string: invalid string length";
   let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
   let table = Table.create () in
   let rec loop = function
@@ -326,6 +328,33 @@ let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
   in
   loop 0;
   weights_of_table table |> rebuild ~auto:true settings empty_stats
+
+module Export = struct
+  type td_t = t
+
+  type settings = {
+    delta: delta;
+    k: k;
+    cx: cx;
+  }
+  [@@deriving sexp]
+
+  type t = {
+    settings: settings;
+    state: string;
+    stats: stats;
+  }
+  [@@deriving sexp]
+
+  let create ({ settings = { delta; k; cx; _ }; stats; _ } as td : td_t) =
+    { settings = { delta; k; cx }; state = to_string td |> snd; stats }
+end
+
+let sexp_of_t td = Export.create td |> [%sexp_of: Export.t]
+
+let t_of_sexp sexp =
+  let Export.{ settings = { delta; k; cx }; state; stats } = [%of_sexp: Export.t] sexp in
+  { (of_string ~delta ~k ~cx state) with stats }
 
 let merge ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) tds =
   let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
