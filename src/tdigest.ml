@@ -1,9 +1,10 @@
 open! Core
 open Float
+module Map = Core.Map
 open Option.Monad_infix
 
 type delta =
-  | Merging  of float
+  | Merging of float
   | Discrete
 [@@deriving sexp]
 
@@ -50,7 +51,7 @@ let empty_stats = { cumulates_count = 0; compress_count = 0; auto_compress_count
 
 type t = {
   settings: settings;
-  centroids: centroid Map.t;
+  centroids: centroid Float.Map.t;
   mutable min: centroid option;
   mutable max: centroid option;
   n: float;
@@ -110,7 +111,7 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
   in
   {
     settings = { delta; k; cx; k_delta = get_k_delta (k, delta) };
-    centroids = Map.empty;
+    centroids = Float.Map.empty;
     min = None;
     max = None;
     n = 0.0;
@@ -133,9 +134,9 @@ let find_nearest td mean =
   let gt = ref None in
   let lte =
     Map.binary_search td.centroids `Last_less_than_or_equal_to mean ~compare:(fun ~key ~data against ->
-        let x = compare key against in
-        if Int.is_positive x then gt := Some (key, data);
-        x)
+      let x = compare key against in
+      if Int.is_positive x then gt := Some (key, data);
+      x )
   in
   match lte with
   | Some (k, v) when mean = k -> Some v
@@ -143,7 +144,7 @@ let find_nearest td mean =
     match !gt with
     | None -> None
     | Some (k2, _v2) when mean - k1 < k2 - mean -> Some v1
-    | Some (_k2, v2) -> Some v2)
+    | Some (_k2, v2) -> Some v2 )
   | None -> None
 
 let use_cache = function
@@ -157,9 +158,9 @@ let cumulate td ~exact =
     let cumn = ref 0.0 in
     let centroids =
       Map.map td.centroids ~f:(fun data ->
-          let updated = { data with mean_cumn = !cumn + (data.n / 2.); cumn = !cumn + data.n } in
-          cumn := updated.cumn;
-          updated)
+        let updated = { data with mean_cumn = !cumn + (data.n / 2.); cumn = !cumn + data.n } in
+        cumn := updated.cumn;
+        updated )
     in
     {
       td with
@@ -169,7 +170,7 @@ let cumulate td ~exact =
       n = !cumn;
       last_cumulate = !cumn;
       stats = { td.stats with cumulates_count = succ td.stats.cumulates_count };
-    })
+    } )
 
 let new_bounds ({ mean; _ } as added) = function
 | { n = 0.0; min = None; max = None; _ } -> Some added, Some added
@@ -187,9 +188,9 @@ let add_weight td nearest ~mean ~n =
   let updated =
     {
       mean =
-        (if nearest.mean = mean
-        then nearest.mean
-        else nearest.mean + (n * (mean - nearest.mean) / (nearest.n + n)));
+        ( if nearest.mean = mean
+          then nearest.mean
+          else nearest.mean + (n * (mean - nearest.mean) / (nearest.n + n)) );
       cumn = nearest.cumn + n;
       mean_cumn = nearest.mean_cumn + (n / 2.);
       n = nearest.n + n;
@@ -225,17 +226,17 @@ let weights_of_td = function
   let arr = Array.create ~len:(Map.length centroids) empty_centroid in
   let _i =
     Map.fold centroids ~init:0 ~f:(fun ~key:_ ~data i ->
-        arr.(i) <- data;
-        succ i)
+      arr.(i) <- data;
+      succ i )
   in
   arr
 
 let weights_of_table table =
-  let arr = Array.create ~len:(Table.length table) empty_centroid in
+  let arr = Array.create ~len:(Hashtbl.length table) empty_centroid in
   let _i =
-    Table.fold table ~init:0 ~f:(fun ~key:mean ~data:n i ->
-        arr.(i) <- { empty_centroid with mean; n };
-        succ i)
+    Hashtbl.fold table ~init:0 ~f:(fun ~key:mean ~data:n i ->
+      arr.(i) <- { empty_centroid with mean; n };
+      succ i )
   in
   arr
 
@@ -244,7 +245,7 @@ let rebuild ~auto settings (stats : stats) arr =
   let blank =
     {
       settings;
-      centroids = Map.empty;
+      centroids = Float.Map.empty;
       min = None;
       max = None;
       n = 0.0;
@@ -297,7 +298,7 @@ let to_string td =
   in
   let _pos =
     Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data:{ mean; n; _ } pos ->
-        add_float pos ~data:mean |> add_float ~data:n)
+      add_float pos ~data:mean |> add_float ~data:n )
   in
   td, Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf
 
@@ -323,7 +324,7 @@ let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
     | pos ->
       let mean = parse_float str pos in
       let n = parse_float str Int.(pos + 8) in
-      Table.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n));
+      Hashtbl.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n));
       (loop [@tailcall]) Int.(pos + 16)
   in
   loop 0;
@@ -360,35 +361,35 @@ let merge ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) tds =
   let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
   let table = Table.create () in
   List.iter tds ~f:(fun { centroids; _ } ->
-      Map.iter centroids ~f:(fun { mean; n; _ } ->
-          Table.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n))));
+    Map.iter centroids ~f:(fun { mean; n; _ } ->
+      Hashtbl.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n)) ) );
   weights_of_table table |> rebuild ~auto:true settings empty_stats
 
 type bounds =
   | Neither
-  | Both    of centroid * centroid
-  | Equal   of centroid
-  | Lower   of centroid
-  | Upper   of centroid
+  | Both of centroid * centroid
+  | Equal of centroid
+  | Lower of centroid
+  | Upper of centroid
 
 let bounds td needle lens =
   let gt = ref None in
   let lte =
     Map.binary_search td.centroids `Last_less_than_or_equal_to needle ~compare:(fun ~key ~data against ->
-        let x = compare (lens data) against in
-        if Int.is_positive x then gt := Some (key, data);
-        x)
+      let x = compare (lens data) against in
+      if Int.is_positive x then gt := Some (key, data);
+      x )
   in
   match lte with
   | Some (_k, v) when lens v = needle -> Equal v
   | Some (_k1, v1) -> (
     match !gt with
     | Some (_k2, v2) -> Both (v1, v2)
-    | None -> Lower v1)
+    | None -> Lower v1 )
   | None -> (
     match get_min td with
     | Some v -> Upper v
-    | None -> Neither)
+    | None -> Neither )
 
 let percentile td p =
   match td with
@@ -409,7 +410,7 @@ let percentile td p =
       td, Some num
     | Both (lower, _upper), Discrete when h <= lower.cumn -> td, Some lower.mean
     | Both (_lower, upper), Discrete -> td, Some upper.mean
-    | Neither, _ -> td, None)
+    | Neither, _ -> td, None )
 
 let percentiles td ps = List.fold_map ps ~init:td ~f:percentile
 
@@ -438,7 +439,7 @@ let p_rank td p =
           + ((p - lower.mean) * (upper.mean_cumn - lower.mean_cumn) / (upper.mean - lower.mean))
         in
         td, Some (num / td.n)
-      | _, Merging _ -> td, None))
+      | _, Merging _ -> td, None ) )
 
 let p_ranks td ps = List.fold_map ps ~init:td ~f:p_rank
 

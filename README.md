@@ -8,7 +8,12 @@ let td =
   Tdigest.create ()
   |> Tdigest.add_list [ 10.0; 11.0; 12.0; 13.0 ]
 in
-Tdigest.p_ranks td [ 9.; 10.; 11.; 12.; 13.; 14. ] (* [ Some 0; Some 0.125; Some 0.375; Some 0.625; Some 0.875; Some 1 ] *)
+
+Tdigest.percentiles td [ 0.; 0.25; 0.5; 0.75; 1. ]
+(* [ Some 10; Some 10.5; Some 11.5; Some 12.5; Some 13 ] *)
+
+Tdigest.p_ranks td [ 9.; 10.; 11.; 12.; 13.; 14. ]
+(* [ Some 0; Some 0.125; Some 0.375; Some 0.625; Some 0.875; Some 1 ] *)
 ```
 
 The T-Digest is a data structure and algorithm for constructing an approximate distribution for a collection of real numbers presented as a stream.

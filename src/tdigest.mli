@@ -5,7 +5,7 @@ open! Core
    [~delta:Discrete] switches off TDigest behavior and treats the distribution as discrete, with no merging and exact values reported.
 *)
 type delta =
-  | Merging  of float
+  | Merging of float
   | Discrete
 [@@deriving sexp]
 

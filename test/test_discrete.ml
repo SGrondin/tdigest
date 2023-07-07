@@ -73,7 +73,7 @@ let%expect_test "discrete digests" =
   (* handles multiples duplicates *)
   Tdigest.create ~delta:Tdigest.Discrete ()
   |> Fn.apply_n_times ~n:10 (fun td ->
-         td |> Tdigest.add ~data:0. |> Tdigest.add ~data:1. |> Tdigest.add ~data:0.5)
+       td |> Tdigest.add ~data:0. |> Tdigest.add ~data:1. |> Tdigest.add ~data:0.5 )
   |> check;
   [%expect {| (((mean 0) (n 10)) ((mean 0.5) (n 10)) ((mean 1) (n 10))) |}]
 
