@@ -18,11 +18,11 @@ Tdigest.p_ranks td [ 9.; 10.; 11.; 12.; 13.; 14. ]
 
 The T-Digest is a data structure and algorithm for constructing an approximate distribution for a collection of real numbers presented as a stream.
 
-The median of a list of medians is not necessarily equal to the median of the whole dataset. The median (p50), p95, and p99 are critical measures that are expensive to compute due to their requirement of having the entire **sorted** dataset present in one place.
+The T-Digest can estimate percentiles or quantiles extremely accurately even at the tails, while using a fraction of the space of the original data.
 
-The T-Digest can estimate percentiles or quantiles extremely accurately even at the tails, while using a fraction of the space.
+A median of medians is not equal to the median of the whole dataset. Percentiles are critical measures that are expensive to compute due to their requirement of having the entire **sorted** dataset present in one place. These downsides are addressed by using the T-Digest.
 
-Additionally, the T-Digest is concatenable, making it a good fit for distributed systems. The internal state of a T-Digest can be exported as a binary string, and the concatenation of any number of those strings can then be imported to form a new T-Digest.
+A T-Digest is concatenable, making it a good fit for distributed systems. The internal state of a T-Digest can be exported as a binary string, and the concatenation of any number of those strings can then be imported to form a new T-Digest.
 
 ```ocaml
 let combined = Tdigest.merge [ td1; td2; td3 ] in
@@ -30,11 +30,13 @@ let combined = Tdigest.merge [ td1; td2; td3 ] in
 
 A T-Digest's state can be stored in a database `VARCHAR`/`TEXT` column and multiple such states can be merged by concatenating strings:
 ```sql
+-- Combine multiple states in the database
 SELECT
   STRING_AGG(M.tdigest_state) AS concat_state
 FROM my_table AS M
 ```
 ```ocaml
+(* Then load this combined state into a single T-Digest *)
 let combined = Tdigest.of_string concat_state in
 ```
 
@@ -55,6 +57,6 @@ opam install tdigest
 
 ## Performance
 
-On a 2018 MacBook Pro, it can incorporate 1,000,000 random floating points in just 770ms.
+On an ancient 2015 MacBook Pro, this implementation can incorporate 1,000,000 random floating points in just 770ms.
 
-Exporting and importing state (`to_string`/`of_string`) is essentially free.
+Exporting and importing state (`to_string`/`of_string`) is cheap.
