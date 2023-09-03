@@ -1,6 +1,5 @@
 open! Core
 open Float
-module Map = Core.Map
 open Option.Monad_infix
 
 type delta =
@@ -51,7 +50,7 @@ let empty_stats = { cumulates_count = 0; compress_count = 0; auto_compress_count
 
 type t = {
   settings: settings;
-  centroids: centroid Float.Map.t;
+  centroids: centroid FMap.t;
   mutable min: centroid option;
   mutable max: centroid option;
   n: float;
@@ -72,7 +71,7 @@ let get_min = function
 | { min = Some _ as x; _ } -> x
 | { min = None; n = 0.0; _ } -> None
 | { min = None; _ } as td ->
-  let min = Map.min_elt td.centroids >>| snd in
+  let min = FMap.min_binding_opt td.centroids >>| snd in
   td.min <- min;
   min
 
@@ -80,7 +79,7 @@ let get_max = function
 | { max = Some _ as x; _ } -> x
 | { max = None; n = 0.0; _ } -> None
 | { max = None; _ } as td ->
-  let max = Map.max_elt td.centroids >>| snd in
+  let max = FMap.max_binding_opt td.centroids >>| snd in
   td.max <- max;
   max
 
@@ -97,7 +96,8 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
       invalid_arg
         "TDigest.create: k parameter cannot be zero, set to Tdigest.Manual to disable automatic \
          compression."
-    | Automatic x -> invalid_argf "TDigest k parameter must be positive, but was %f" x ()
+    | Automatic x ->
+      invalid_arg (Stdlib.Format.sprintf "TDigest k parameter must be positive, but was %f" x)
   in
   let cx =
     match cx with
@@ -107,11 +107,12 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
       invalid_arg
         "TDigest.create: cx parameter cannot be zero, set to Tdigest.Always to disable caching of \
          cumulative totals."
-    | Growth x -> invalid_argf "TDigest.create: cx parameter must be positive, but was %f" x ()
+    | Growth x ->
+      invalid_arg (Stdlib.Format.sprintf "TDigest.create: cx parameter must be positive, but was %f" x)
   in
   {
     settings = { delta; k; cx; k_delta = get_k_delta (k, delta) };
-    centroids = Float.Map.empty;
+    centroids = FMap.empty;
     min = None;
     max = None;
     n = 0.0;
@@ -119,12 +120,12 @@ let create ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) () =
     stats = empty_stats;
   }
 
-let is_empty { centroids; _ } = Map.is_empty centroids
+let is_empty { centroids; _ } = FMap.is_empty centroids
 
 let info { centroids; n; stats; _ } =
   {
     count = to_int n;
-    size = Map.length centroids;
+    size = FMap.cardinal centroids;
     cumulates_count = stats.cumulates_count;
     compress_count = stats.compress_count;
     auto_compress_count = stats.auto_compress_count;
@@ -133,7 +134,7 @@ let info { centroids; n; stats; _ } =
 let find_nearest td mean =
   let gt = ref None in
   let lte =
-    Map.binary_search td.centroids `Last_less_than_or_equal_to mean ~compare:(fun ~key ~data against ->
+    FMap.binary_search td.centroids `Last_less_than_or_equal_to mean ~compare:(fun ~key ~data against ->
       let x = compare key against in
       if Int.is_positive x then gt := Some (key, data);
       x )
@@ -157,10 +158,12 @@ let cumulate td ~exact =
   else (
     let cumn = ref 0.0 in
     let centroids =
-      Map.map td.centroids ~f:(fun data ->
-        let updated = { data with mean_cumn = !cumn + (data.n / 2.); cumn = !cumn + data.n } in
-        cumn := updated.cumn;
-        updated )
+      FMap.map
+        (fun (data : centroid) ->
+          let updated = { data with mean_cumn = !cumn + (data.n / 2.); cumn = !cumn + data.n } in
+          cumn := updated.cumn;
+          updated)
+        td.centroids
     in
     {
       td with
@@ -169,7 +172,7 @@ let cumulate td ~exact =
       max = None;
       n = !cumn;
       last_cumulate = !cumn;
-      stats = { td.stats with cumulates_count = succ td.stats.cumulates_count };
+      stats = { td.stats with cumulates_count = Stdlib.succ td.stats.cumulates_count };
     } )
 
 let new_bounds ({ mean; _ } as added) = function
@@ -180,7 +183,7 @@ let new_bounds ({ mean; _ } as added) = function
 
 let new_centroid td ~mean ~n ~cumn =
   let data = { mean; cumn; n; mean_cumn = n / 2. } in
-  let centroids = Map.add_exn td.centroids ~key:mean ~data in
+  let centroids = FMap.add mean data td.centroids in
   let min, max = new_bounds data td in
   { td with centroids; min; max; n = td.n + n }
 
@@ -196,7 +199,7 @@ let add_weight td nearest ~mean ~n =
       n = nearest.n + n;
     }
   in
-  let centroids = Map.remove td.centroids nearest.mean |> Map.add_exn ~key:updated.mean ~data:updated in
+  let centroids = FMap.remove nearest.mean td.centroids |> FMap.add updated.mean updated in
   { td with centroids; n = td.n + n; min = None; max = None }
 
 let internal_digest td ~n ~mean =
@@ -221,13 +224,15 @@ let internal_digest td ~n ~mean =
 
 let weights_of_td = function
 (* n is out of sync, must check centroids *)
-| { centroids; _ } when Map.is_empty centroids -> [||]
+| { centroids; _ } when FMap.is_empty centroids -> [||]
 | { centroids; _ } ->
-  let arr = Array.create ~len:(Map.length centroids) empty_centroid in
+  let arr = Array.create ~len:(FMap.cardinal centroids) empty_centroid in
   let _i =
-    Map.fold centroids ~init:0 ~f:(fun ~key:_ ~data i ->
-      arr.(i) <- data;
-      succ i )
+    FMap.fold
+      (fun _key data i ->
+        arr.(i) <- data;
+        Stdlib.succ i)
+      centroids 0
   in
   arr
 
@@ -236,7 +241,7 @@ let weights_of_table table =
   let _i =
     Hashtbl.fold table ~init:0 ~f:(fun ~key:mean ~data:n i ->
       arr.(i) <- { empty_centroid with mean; n };
-      succ i )
+      Stdlib.succ i )
   in
   arr
 
@@ -245,7 +250,7 @@ let rebuild ~auto settings (stats : stats) arr =
   let blank =
     {
       settings;
-      centroids = Float.Map.empty;
+      centroids = FMap.empty;
       min = None;
       max = None;
       n = 0.0;
@@ -253,8 +258,8 @@ let rebuild ~auto settings (stats : stats) arr =
       stats =
         {
           stats with
-          compress_count = succ stats.compress_count;
-          auto_compress_count = (if auto then succ else Fn.id) stats.auto_compress_count;
+          compress_count = Stdlib.succ stats.compress_count;
+          auto_compress_count = (if auto then Stdlib.succ else Fn.id) stats.auto_compress_count;
         };
     }
   in
@@ -264,7 +269,7 @@ let rebuild ~auto settings (stats : stats) arr =
 let digest ?(n = 1) td ~mean =
   let td = internal_digest td ~n:(of_int n) ~mean in
   match td.settings with
-  | { k_delta = Some kd; _ } when Map.length td.centroids |> of_int > kd ->
+  | { k_delta = Some kd; _ } when FMap.cardinal td.centroids |> of_int > kd ->
     rebuild ~auto:true td.settings td.stats (weights_of_td td)
   | _ -> td
 
@@ -285,20 +290,21 @@ let compress ?delta td =
     { updated with settings }
 
 let to_string td =
-  let buf = Bytes.create (Map.length td.centroids |> Int.( * ) 16) in
+  let buf = Bytes.create (FMap.cardinal td.centroids |> Int.( * ) 16) in
   let add_float pos ~data:f =
     let v = Int64.bits_of_float f in
     let rec loop pos = function
       | 8 -> pos
       | i ->
         Bytes.set buf pos Int64.(255L land shift_right v Int.(i * 8) |> to_int_exn |> Char.of_int_exn);
-        (loop [@tailcall]) (succ pos) (succ i)
+        (loop [@tailcall]) (Stdlib.succ pos) (Stdlib.succ i)
     in
     loop pos 0
   in
   let _pos =
-    Map.fold td.centroids ~init:0 ~f:(fun ~key:_ ~data:{ mean; n; _ } pos ->
-      add_float pos ~data:mean |> add_float ~data:n )
+    FMap.fold
+      (fun _key { mean; n; _ } pos -> add_float pos ~data:mean |> add_float ~data:n)
+      td.centroids 0
   in
   td, Bytes.unsafe_to_string ~no_mutation_while_string_reachable:buf
 
@@ -318,7 +324,7 @@ let parse_float str pos =
 let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
   if Int.(String.length str % 16 <> 0) then invalid_arg "Tdigest.of_string: invalid string length";
   let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
-  let table = Table.create () in
+  let table = Float.Table.create ~size:Int.(String.length str / 8) () in
   let rec loop = function
     | pos when Int.(pos = String.length str) -> ()
     | pos ->
@@ -359,10 +365,11 @@ let t_of_sexp sexp =
 
 let merge ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) tds =
   let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
-  let table = Table.create () in
+  let table = Float.Table.create () in
   List.iter tds ~f:(fun { centroids; _ } ->
-    Map.iter centroids ~f:(fun { mean; n; _ } ->
-      Hashtbl.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n)) ) );
+    FMap.iter
+      (fun _key { mean; n; _ } -> Hashtbl.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n)))
+      centroids );
   weights_of_table table |> rebuild ~auto:true settings empty_stats
 
 type bounds =
@@ -375,7 +382,7 @@ type bounds =
 let bounds td needle lens =
   let gt = ref None in
   let lte =
-    Map.binary_search td.centroids `Last_less_than_or_equal_to needle ~compare:(fun ~key ~data against ->
+    FMap.binary_search td.centroids `Last_less_than_or_equal_to needle ~compare:(fun ~key ~data against ->
       let x = compare (lens data) against in
       if Int.is_positive x then gt := Some (key, data);
       x )
@@ -445,7 +452,8 @@ let p_ranks td ps = List.fold_map ps ~init:td ~f:p_rank
 
 module Private = struct
   let centroids td =
-    Map.fold_right td.centroids ~init:[] ~f:(fun ~key:_ ~data:{ mean; n; _ } acc -> (mean, n) :: acc)
+    FMap.to_rev_seq td.centroids
+    |> Stdlib.Seq.fold_left (fun acc (_key, { mean; n; _ }) -> (mean, n) :: acc) []
 
   let min td = get_min td >>| fun { mean; n; _ } -> mean, n
 
