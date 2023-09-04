@@ -6,6 +6,9 @@ let render_centroids ll =
 
 let check td = Tdigest.Private.centroids td |> render_centroids |> Sexp.to_string_hum |> print_endline
 
+let checkm td =
+  Tdigest.Marshallable.Private.centroids td |> render_centroids |> Sexp.to_string_hum |> print_endline
+
 let check_size td = (Tdigest.info td).size |> sprintf !"%{sexp: int}" |> print_endline
 
 let check_min_max td =

@@ -28,8 +28,6 @@ type cx =
   | Growth of float
 [@@deriving sexp]
 
-type t [@@deriving sexp]
-
 (**
    [count]: sum of all [n]
 
@@ -50,137 +48,150 @@ type info = {
 }
 [@@deriving sexp]
 
-(**
-   [Tdigest.create ?delta ?k ?cx ()]
+module M : sig
+  type t [@@deriving sexp]
 
-   Allocate an empty Tdigest instance.
+  (**
+      [Tdigest.create ?delta ?k ?cx ()]
 
-   [delta] (default: [0.01]) is the compression factor, the max fraction of mass that can be owned by one centroid (bigger, up to 1.0, means more compression).
-   [~delta:Discrete] switches off TDigest behavior and treats the distribution as discrete, with no merging and exact values reported.
+      Allocate an empty Tdigest instance.
 
-   [k] (default: [25]) is a size threshold that triggers recompression as the TDigest grows during input.
-   [~k:Manual] disables automatic recompression.
+      [delta] (default: [0.01]) is the compression factor, the max fraction of mass that can be owned by one centroid (bigger, up to 1.0, means more compression).
+      [~delta:Discrete] switches off TDigest behavior and treats the distribution as discrete, with no merging and exact values reported.
 
-   [cx] (default: [1.1]) specifies how often to update cached cumulative totals used for quantile estimation during ingest.
-   This is a tradeoff between performance and accuracy.
-   [~cx:Always] will recompute cumulatives on every new datapoint, but the performance drops by 15-25x or even more depending on the size of the dataset.
-*)
-val create : ?delta:delta -> ?k:k -> ?cx:cx -> unit -> t
+      [k] (default: [25]) is a size threshold that triggers recompression as the TDigest grows during input.
+      [~k:Manual] disables automatic recompression.
 
-(**
-   [Tdigest.is_empty td] returns [true] when the T-Digest does not contain any values.
-*)
-val is_empty : t -> bool
+      [cx] (default: [1.1]) specifies how often to update cached cumulative totals used for quantile estimation during ingest.
+      This is a tradeoff between performance and accuracy.
+      [~cx:Always] will recompute cumulatives on every new datapoint, but the performance drops by 15-25x or even more depending on the size of the dataset.
+   *)
+  val create : ?delta:delta -> ?k:k -> ?cx:cx -> unit -> t
 
-(**
-   [Tdigest.info td] returns a record with these fields:
+  (**
+      [Tdigest.is_empty td] returns [true] when the T-Digest does not contain any values.
+   *)
+  val is_empty : t -> bool
 
-   [count]: sum of all [n]
+  (**
+      [Tdigest.info td] returns a record with these fields:
 
-   [size]: size of the internal B-Tree. Calling [Tdigest.compress] will usually reduce this size.
+      [count]: sum of all [n]
 
-   [cumulates_count]: number of cumulate operations over the life of this Tdigest instance.
+      [size]: size of the internal B-Tree. Calling [Tdigest.compress] will usually reduce this size.
 
-   [compress_count]: number of compression operations over the life of this Tdigest instance.
+      [cumulates_count]: number of cumulate operations over the life of this Tdigest instance.
 
-   [auto_cumulates_count]: number of compression operations over the life of this Tdigest instance that were not triggered by a manual call to [Tdigest.compress].
-*)
-val info : t -> info
+      [compress_count]: number of compression operations over the life of this Tdigest instance.
 
-(**
-   [Tdigest.add ?n ~data td]
+      [auto_cumulates_count]: number of compression operations over the life of this Tdigest instance that were not triggered by a manual call to [Tdigest.compress].
+   *)
+  val info : t -> info
 
-   Incorporate a value ([data]) having count [n] (default: [1]) into a new Tdigest.
-*)
-val add : ?n:int -> data:float -> t -> t
+  (**
+      [Tdigest.add ?n ~data td]
 
-(**
-   [Tdigest.add_list ?n ll td]
+      Incorporate a value ([data]) having count [n] (default: [1]) into a new Tdigest.
+   *)
+  val add : ?n:int -> data:float -> t -> t
 
-   Incorporate a list of values each having count [n] (default: [1]) into a new Tdigest.
-*)
-val add_list : ?n:int -> float list -> t -> t
+  (**
+      [Tdigest.add_list ?n ll td]
 
-(**
-   [Tdigest.merge ?delta ?k ?cx tdigests]
+      Incorporate a list of values each having count [n] (default: [1]) into a new Tdigest.
+   *)
+  val add_list : ?n:int -> float list -> t -> t
 
-   Efficiently combine multiple Tdigests into a new one.
-*)
-val merge : ?delta:delta -> ?k:k -> ?cx:cx -> t list -> t
+  (**
+      [Tdigest.merge ?delta ?k ?cx tdigests]
 
-(**
-   [Tdigest.p_rank td q]
-   For a value [q] estimate the percentage ([0..1]) of values [<= q].
+      Efficiently combine multiple Tdigests into a new one.
+   *)
+  val merge : ?delta:delta -> ?k:k -> ?cx:cx -> t list -> t
 
-   Returns a new Tdigest to reuse intermediate computations.
-*)
-val p_rank : t -> float -> t * float option
+  (**
+      [Tdigest.p_rank td q]
+      For a value [q] estimate the percentage ([0..1]) of values [<= q].
 
-(**
-   Same as [Tdigest.p_rank] but for a list of values.
+      Returns a new Tdigest to reuse intermediate computations.
+   *)
+  val p_rank : t -> float -> t * float option
 
-   Returns a new Tdigest to reuse intermediate computations.
-*)
-val p_ranks : t -> float list -> t * float option list
+  (**
+      Same as [Tdigest.p_rank] but for a list of values.
 
-(**
-   [Tdigest.percentile td p]
+      Returns a new Tdigest to reuse intermediate computations.
+   *)
+  val p_ranks : t -> float list -> t * float option list
 
-   For a percentage [p] ([0..1]) estimate the smallest value [q] at which at least [p] percent of the values [<= q].
+  (**
+      [Tdigest.percentile td p]
 
-   For discrete distributions, this selects q using the Nearest Rank Method
-   [https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method]
+      For a percentage [p] ([0..1]) estimate the smallest value [q] at which at least [p] percent of the values [<= q].
 
-   For continuous distributions, interpolates data values between count-weighted bracketing means.
+      For discrete distributions, this selects q using the Nearest Rank Method
+      [https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method]
 
-   Returns a new Tdigest to reuse intermediate computations.
-*)
-val percentile : t -> float -> t * float option
+      For continuous distributions, interpolates data values between count-weighted bracketing means.
 
-(**
-   Same as [Tdigest.percentile] but for a list of values.
+      Returns a new Tdigest to reuse intermediate computations.
+   *)
+  val percentile : t -> float -> t * float option
 
-   Returns a new Tdigest to reuse intermediate computations.
-*)
-val percentiles : t -> float list -> t * float option list
+  (**
+      Same as [Tdigest.percentile] but for a list of values.
 
-(**
-   [Tdigest.compress ?delta td]
+      Returns a new Tdigest to reuse intermediate computations.
+   *)
+  val percentiles : t -> float list -> t * float option list
 
-   Manual recompression. Not guaranteed to reduce size further if too few values have been added since the last compression.
+  (**
+      [Tdigest.compress ?delta td]
 
-   [delta] (default: initial value passed to [Tdigest.create]) The compression level to use for this operation only. This does not alter the [delta] used by the Tdigest going forward.
-*)
-val compress : ?delta:delta -> t -> t
+      Manual recompression. Not guaranteed to reduce size further if too few values have been added since the last compression.
 
-(**
-   [Tdigest.to_string td]
+      [delta] (default: initial value passed to [Tdigest.create]) The compression level to use for this operation only. This does not alter the [delta] used by the Tdigest going forward.
+   *)
+  val compress : ?delta:delta -> t -> t
 
-   Serialize the internal state into a binary string that can be stored or concatenated with other such binary strings.
+  (**
+      [Tdigest.to_string td]
 
-   Use [Tdigest.of_string] to create a new Tdigest instance from it.
+      Serialize the internal state into a binary string that can be stored or concatenated with other such binary strings.
 
-   Returns a new Tdigest to reuse intermediate computations.
-*)
-val to_string : t -> t * string
+      Use [Tdigest.of_string] to create a new Tdigest instance from it.
 
-(**
-   [Tdigest.of_string ?delta ?k ?cx str]
+      Returns a new Tdigest to reuse intermediate computations.
+   *)
+  val to_string : t -> t * string
 
-   See [Tdigest.create] for the meaning of the optional parameters.
+  (**
+      [Tdigest.of_string ?delta ?k ?cx str]
 
-   Allocate a new Tdigest from a string or concatenation of strings originally created by [Tdigest.to_string].
-*)
-val of_string : ?delta:delta -> ?k:k -> ?cx:cx -> string -> t
+      See [Tdigest.create] for the meaning of the optional parameters.
 
-(** For internal use *)
-module Private : sig
-  (** For internal use *)
-  val centroids : t -> (float * float) list
+      Allocate a new Tdigest from a string or concatenation of strings originally created by [Tdigest.to_string].
+   *)
+  val of_string : ?delta:delta -> ?k:k -> ?cx:cx -> string -> t
 
   (** For internal use *)
-  val min : t -> (float * float) option
+  module Private : sig
+    (** For internal use *)
+    val centroids : t -> (float * float) list
 
-  (** For internal use *)
-  val max : t -> (float * float) option
+    (** For internal use *)
+    val min : t -> (float * float) option
+
+    (** For internal use *)
+    val max : t -> (float * float) option
+  end
 end
+
+(** A marshallable version of this library. Approximately 5x slower than the non-marshallable version. *)
+module Marshallable : sig
+  type t
+
+  include module type of M with type t := t
+end
+
+include module type of M

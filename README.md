@@ -55,6 +55,12 @@ The API is well documented [here](https://github.com/SGrondin/tdigest/blob/maste
 opam install tdigest
 ```
 
+### Marshal
+
+The `Tdigest.t` type cannot be marshalled.
+
+Use the functions in `Tdigest.Marshallable` if your application requires marshalling a T-Digest data structure. Note that `Tdigest.Marshallable.t` is approximately 5 times slower than `Tdigest.t`.
+
 ## Performance
 
 On an ancient 2015 MacBook Pro, this implementation can incorporate 1,000,000 random floating points in just 770ms.
