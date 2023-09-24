@@ -1,4 +1,8 @@
-open! Core
+open! Base
+
+let sprintf = Printf.sprintf
+
+let print_endline = Stdlib.print_endline
 
 let render_centroids ll =
   List.map ll ~f:(fun (mean, n) -> ("mean", mean), ("n", n))

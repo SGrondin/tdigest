@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Shared
 
 let%expect_test "discrete digests" =

@@ -3,7 +3,8 @@
   (libraries
     tdigest
 
-    core
+    base
+    unix
   )
 
   (modes exe)

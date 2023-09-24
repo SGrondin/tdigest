@@ -2,10 +2,10 @@
   (name tdigest)
   (public_name tdigest)
   (libraries
-    core
+    base
   )
   (preprocess (pps
-    ppx_jane
+    ppx_sexp_conv
   ))
 )
 

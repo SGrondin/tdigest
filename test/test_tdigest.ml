@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Shared
 
 let%expect_test "T-Digests in which each point becomes a centroid" =
@@ -144,7 +144,7 @@ let%expect_test "percentile ranks" =
     let _i, max_err, _td =
       Fn.apply_n_times ~n:100
         (fun (i, max_err, td) ->
-          let td, q = Tdigest.p_rank td i |> Tuple2.map_snd ~f:(fun x -> Option.value_exn x) in
+          let td, q = Tdigest.p_rank td i |> fun (x, y) -> x, Option.value_exn y in
           let m = Float.(max max_err (i - q |> abs)) in
           Float.(i + 0.01), m, td)
         (0.01, 0.0, td)
@@ -200,7 +200,7 @@ let%expect_test "percentiles" =
     let _i, max_err, _td =
       Fn.apply_n_times ~n:100
         (fun (i, max_err, td) ->
-          let td, q = Tdigest.p_rank td i |> Tuple2.map_snd ~f:(fun x -> Option.value_exn x) in
+          let td, q = Tdigest.p_rank td i |> fun (x, y) -> x, Option.value_exn y in
           let m = Float.(max max_err (i - q |> abs)) in
           Float.(i + 0.01), m, td)
         (0.01, 0.0, td)
@@ -271,9 +271,9 @@ let%expect_test "serialization" =
     let xs = List.init 10 ~f:(fun _i -> Random.float 1.) in
     let td1 = Tdigest.Marshallable.create () |> Tdigest.Marshallable.add_list xs in
     let td2 : Tdigest.Marshallable.t =
-      Marshal.to_string td1 [] |> fun s ->
+      Stdlib.Marshal.to_string td1 [] |> fun s ->
       print_endline (sprintf "Length: %d" (String.length s));
-      Marshal.from_string s 0
+      Stdlib.Marshal.from_string s 0
     in
     print_endline (sprintf !"%{sexp#hum: Tdigest.Marshallable.t}" td1);
     print_endline (sprintf !"%{sexp#hum: Tdigest.Marshallable.t}" td2);

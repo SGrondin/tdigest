@@ -1,4 +1,5 @@
-open! Core
+open! Base
+module Map = Cmap
 open Option.Monad_infix
 
 type delta =
@@ -133,7 +134,7 @@ module Make (M : M) = struct
         invalid_arg
           "TDigest.create: k parameter cannot be zero, set to Tdigest.Manual to disable automatic \
            compression."
-      | Automatic x -> invalid_argf "TDigest k parameter must be positive, but was %f" x ()
+      | Automatic x -> Printf.invalid_argf "TDigest k parameter must be positive, but was %f" x ()
     in
     let cx =
       match cx with
@@ -143,7 +144,7 @@ module Make (M : M) = struct
         invalid_arg
           "TDigest.create: cx parameter cannot be zero, set to Tdigest.Always to disable caching of \
            cumulative totals."
-      | Growth x -> invalid_argf "TDigest.create: cx parameter must be positive, but was %f" x ()
+      | Growth x -> Printf.invalid_argf "TDigest.create: cx parameter must be positive, but was %f" x ()
     in
     {
       settings = { delta; k; cx; k_delta = get_k_delta (k, delta) };
@@ -206,7 +207,7 @@ module Make (M : M) = struct
         max = None;
         n = !cumn;
         last_cumulate = !cumn;
-        stats = { td.stats with cumulates_count = succ td.stats.cumulates_count };
+        stats = { td.stats with cumulates_count = Int.succ td.stats.cumulates_count };
       } )
 
   let new_bounds ({ mean; _ } as added) = function
@@ -268,7 +269,7 @@ module Make (M : M) = struct
     let _i =
       M.Map.fold centroids ~init:0 ~f:(fun ~key:_ ~data i ->
         arr.(i) <- data;
-        succ i )
+        Int.succ i )
     in
     arr
 
@@ -277,7 +278,7 @@ module Make (M : M) = struct
     let _i =
       Hashtbl.fold table ~init:0 ~f:(fun ~key:mean ~data:n i ->
         arr.(i) <- { empty_centroid with mean; n };
-        succ i )
+        Int.succ i )
     in
     arr
 
@@ -294,8 +295,8 @@ module Make (M : M) = struct
         stats =
           {
             stats with
-            compress_count = succ stats.compress_count;
-            auto_compress_count = (if auto then succ else Fn.id) stats.auto_compress_count;
+            compress_count = Int.succ stats.compress_count;
+            auto_compress_count = (if auto then Int.succ else Fn.id) stats.auto_compress_count;
           };
       }
     in
@@ -333,7 +334,7 @@ module Make (M : M) = struct
         | 8 -> pos
         | i ->
           Bytes.set buf pos Int64.(255L land shift_right v Int.(i * 8) |> to_int_exn |> Char.of_int_exn);
-          (loop [@tailcall]) (succ pos) (succ i)
+          (loop [@tailcall]) (Int.succ pos) (Int.succ i)
       in
       loop pos 0
     in
@@ -359,7 +360,7 @@ module Make (M : M) = struct
   let of_string ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) str =
     if Int.(String.length str % 16 <> 0) then invalid_arg "Tdigest.of_string: invalid string length";
     let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
-    let table = Table.create () in
+    let table = Hashtbl.create (module Float) in
     let rec loop = function
       | pos when Int.(pos = String.length str) -> ()
       | pos ->
@@ -400,7 +401,7 @@ module Make (M : M) = struct
 
   let merge ?(delta = default_delta) ?(k = default_k) ?(cx = default_cx) tds =
     let settings = { delta; k; cx; k_delta = get_k_delta (k, delta) } in
-    let table = Table.create () in
+    let table = Hashtbl.create (module Float) in
     List.iter tds ~f:(fun { centroids; _ } ->
       M.Map.iter centroids ~f:(fun { mean; n; _ } ->
         Hashtbl.update table mean ~f:(Option.value_map ~default:n ~f:(( + ) n)) ) );
@@ -496,17 +497,17 @@ module Make (M : M) = struct
 end
 
 module M = Make (struct
+  type 'a t = (float, 'a, Float.comparator_witness) Map.t
+
+  let empty = Map.empty (module Float)
+
   module Map = Map
-
-  type 'a t = 'a Float.Map.t
-
-  let empty = Float.Map.empty
 end)
 
 module Marshallable = Make (struct
-  module Map = Map.Make_tree (Float)
+  type 'a t = (float, 'a, Float.comparator_witness) Map.Tree.t
 
-  type 'a t = 'a Map.t
+  module Map = Map.Make_tree (Float)
 
   let empty = Map.empty
 end)

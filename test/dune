@@ -5,7 +5,9 @@
     tdigest
   )
   (preprocess (pps
-    ppx_jane
+    ppx_expect
+    ppx_sexp_conv
+    ppx_custom_printf
   ))
   (ocamlopt_flags -Oclassic)
 )
