@@ -201,6 +201,12 @@ end = struct
   let map_keys_exn t ~f = Using_comparator.map_keys_exn ~comparator t ~f
 
   let transpose_keys t = Using_comparator.transpose_keys ~comparator t
+
+  let of_list_with_key_fold list ~get_key ~init ~f =
+    Using_comparator.of_list_with_key_fold ~comparator list ~get_key ~init ~f
+
+  let of_list_with_key_reduce l ~get_key ~f =
+      Using_comparator.of_list_with_key_reduce ~comparator l ~get_key ~f
 end
 
 module Make_tree_S1 (Key : Comparator.S1) = struct
